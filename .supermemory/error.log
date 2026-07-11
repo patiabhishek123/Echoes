@@ -1,0 +1,14 @@
+[2026-07-11T17:31:52.519Z] fatal during startup: Unable to connect. Is the computer able to access the url?
+[2026-07-11T17:34:40.477Z] fatal during startup: [embeddings] Cannot infer output dimensionality for google model "gemini-embedding-001". Set SUPERMEMORY_EMBEDDING_DIMENSIONS to the model's embedding size (e.g. 1536 for text-embedding-3-small, 3072 for text-embedding-3-large, 768/1536/3072 for gemini-embedding-001).
+[2026-07-11T17:34:46.462Z] fatal during startup: Embedding model mismatch: this data dir already has embeddings from
+  locked:     local · Xenova/bge-base-en-v1.5 · 768d
+  configured: google · gemini-embedding-001 · 768d
+
+Embeddings from different models are not comparable, so search would
+silently degrade if we mixed them. To switch models:
+  1. Stop the server
+  2. Wipe the data dir (or point SUPERMEMORY_DATA_DIR at a fresh path)
+  3. Re-ingest your documents under the new model
+
+Example wipe (DESTROYS all local memories):
+  rm -rf "$SUPERMEMORY_DATA_DIR"   # default is ./.supermemory
