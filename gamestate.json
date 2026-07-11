@@ -1,0 +1,123 @@
+{
+  "sessionId": "e8rmykji",
+  "day": 2,
+  "gameEnded": false,
+  "endingType": null,
+  "npcs": {
+    "blacksmith": {
+      "id": "blacksmith",
+      "name": "Hagar",
+      "role": "Blacksmith",
+      "portrait": "/portraits/blacksmith.png",
+      "metrics": {
+        "trust": 45,
+        "respect": 35,
+        "fear": 10,
+        "friendship": 25
+      },
+      "relationships": "Close friend of Captain Kael (Guard). Dislikes Silas the Merchant.",
+      "personality": "Gruff, hard-working, honest, and blunt. Values sweat, steel, and absolute honesty. Despises sweet talkers and inconsistency."
+    },
+    "guard": {
+      "id": "guard",
+      "name": "Captain Kael",
+      "role": "Captain of the Guard",
+      "portrait": "/portraits/guard.png",
+      "metrics": {
+        "trust": 35,
+        "respect": 55,
+        "fear": 20,
+        "friendship": 20
+      },
+      "relationships": "Close friend of Hagar the Blacksmith. Suspicious of outsiders.",
+      "personality": "Stern, vigilant, orderly, and highly disciplined. Values consistency, law, and security. Suspicious of anyone whose story changes or who acts shifty."
+    },
+    "merchant": {
+      "id": "merchant",
+      "name": "Silas",
+      "role": "Merchant",
+      "portrait": "/portraits/merchant.png",
+      "metrics": {
+        "trust": 60,
+        "respect": 25,
+        "fear": 5,
+        "friendship": 42
+      },
+      "relationships": "Always looking for trade secrets. Finds Mayor Evelyn intimidating.",
+      "personality": "Sly, charismatic, gossipy, and greedy. Loves gold, rumors, and knowing things others don't. Can be bribed with info or promises, but will sell out secrets just as fast."
+    },
+    "mayor": {
+      "id": "mayor",
+      "name": "Mayor Evelyn",
+      "role": "Village Mayor",
+      "portrait": "/portraits/mayor.png",
+      "metrics": {
+        "trust": 30,
+        "respect": 60,
+        "fear": 15,
+        "friendship": 10
+      },
+      "relationships": "Demands respect. Keeps a close eye on Silas.",
+      "personality": "Dignified, elderly, politically minded, and secretive. Values status, respect, decorum, and the safety of the village. Suspicious of outsiders trying to gain influence."
+    }
+  },
+  "conversations": {
+    "blacksmith": [
+      {
+        "sender": "player",
+        "content": "Greetings Hagar! I am Sir Galahad, a brave royal knight sent by the king on a secret quest here.",
+        "timestamp": "11:23 PM"
+      },
+      {
+        "sender": "npc",
+        "content": "A 'brave royal knight' on a 'secret quest,' is it? If you're a knight, my anvil is made of cheese. State your business plainly, stranger, and leave the fancy talk for Silas.",
+        "timestamp": "11:23 PM"
+      }
+    ],
+    "guard": [
+      {
+        "sender": "player",
+        "content": "Greetings Captain Kael. I am Sir Galahad. Have you heard any news or rumors in the village?",
+        "timestamp": "11:24 PM"
+      },
+      {
+        "sender": "npc",
+        "content": "A knight, you claim? We don't get many of your kind in a quiet village like this, 'Sir' Galahad, and I'll be wanting to see some proof of that title before long. As for rumors, the only news that concerns me is keeping the peace, so I suggest you keep your nose clean while you're here.",
+        "timestamp": "11:24 PM"
+      }
+    ],
+    "merchant": [
+      {
+        "sender": "player",
+        "content": "Hello Silas. I am just a simple traveler and wanderer looking for shelter. I have no business here.",
+        "timestamp": "11:23 PM"
+      },
+      {
+        "sender": "npc",
+        "content": "A 'simple traveler' with no business, you say? Ah, but everyone has *some* business in my shop, even if it is just trading a juicy rumor for a warm corner to rest. Tell me, what brings you all this way, then?",
+        "timestamp": "11:23 PM"
+      }
+    ],
+    "mayor": []
+  },
+  "gossipLogs": [
+    {
+      "day": 1,
+      "fromNpc": "blacksmith",
+      "toNpc": "merchant",
+      "rumor": "I'll tell you this much, Silas... that new stranger in town is acting mighty mysterious. Keeps their business close to their chest and don't say two words to anyone unless they absolutely have to. I don't trust it."
+    },
+    {
+      "day": 1,
+      "fromNpc": "guard",
+      "toNpc": "blacksmith",
+      "rumor": "Between you and me, Hagar, that traveler who slipped past my gates on the eleventh... the stranger is acting highly mysterious. I've got my guards keeping a close eye on them, as they won't state their business."
+    },
+    {
+      "day": 1,
+      "fromNpc": "merchant",
+      "toNpc": "blacksmith",
+      "rumor": "Have you noticed the new traveler who just arrived, Hagar? Word is they're already sniffing around, trying to cozy up to anyone in town with a fat purse or a bit of power. Quite the shameless climber, if you ask me!"
+    }
+  ]
+}
