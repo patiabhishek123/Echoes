@@ -42,9 +42,15 @@ export interface GossipLog {
   rumor: string;
 }
 
+export interface MemoryItem {
+  id: string;
+  content: string;
+}
+
 export interface GameState {
   sessionId: string;
   day: number;
+  coins: number;
   gameEnded: boolean;
   endingType: "mayor" | "friend" | "outcast" | "arrested" | "merchant" | null;
   npcs: Record<string, NPC>;
@@ -124,6 +130,7 @@ export function getGameState(): GameState {
     const newState: GameState = {
       sessionId: Math.random().toString(36).substring(2, 10),
       day: 1,
+      coins: 30,
       gameEnded: false,
       endingType: null,
       npcs: JSON.parse(JSON.stringify(INITIAL_NPCS)),
@@ -141,12 +148,17 @@ export function getGameState(): GameState {
 
   try {
     const data = fs.readFileSync(STATE_FILE_PATH, "utf-8");
-    return JSON.parse(data);
+    const parsed = JSON.parse(data);
+    if (parsed.coins === undefined) {
+      parsed.coins = 30;
+    }
+    return parsed;
   } catch (error) {
     console.error("Error reading game state, recreating:", error);
     const newState: GameState = {
       sessionId: Math.random().toString(36).substring(2, 10),
       day: 1,
+      coins: 30,
       gameEnded: false,
       endingType: null,
       npcs: JSON.parse(JSON.stringify(INITIAL_NPCS)),
@@ -172,6 +184,7 @@ export async function resetGame(): Promise<GameState> {
   const newState: GameState = {
     sessionId,
     day: 1,
+    coins: 30,
     gameEnded: false,
     endingType: null,
     npcs: JSON.parse(JSON.stringify(INITIAL_NPCS)),
@@ -186,7 +199,7 @@ export async function resetGame(): Promise<GameState> {
 
   saveGameState(newState);
 
-  // Seed the fresh Supermemory tags in the background (fire-and-forget for speed)
+  // Seed the fresh Supermemory tags in the background
   for (const [npcId, memories] of Object.entries(SEED_MEMORIES)) {
     const containerTag = `${npcId}_${sessionId}`;
     for (const memory of memories) {
@@ -195,6 +208,11 @@ export async function resetGame(): Promise<GameState> {
       );
     }
   }
+
+  // Clear player journal under player_${sessionId} tag by seeding it empty or with a default entry
+  addMemoryToSupermemory(`player_${sessionId}`, "Entered the village of Echoes on Day 1. Looking to blend in and learn secrets.").catch(err => 
+    console.error("Error seeding player journal:", err)
+  );
 
   return newState;
 }
@@ -249,11 +267,87 @@ async function getNPCMemories(containerTag: string, query: string): Promise<stri
   }
 }
 
-export async function getNPCMemoriesForFront(npcId: string): Promise<string[]> {
+// Memory fetching that returns document IDs for deletion/potion mechanics
+export async function getNPCMemoriesWithIds(containerTag: string, query: string = ""): Promise<MemoryItem[]> {
+  try {
+    const response = await fetch(`${supermemoryUrl}/v4/profile`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${supermemoryKey}`
+      },
+      body: JSON.stringify({ containerTag, q: query })
+    });
+
+    if (!response.ok) {
+      console.error(`Supermemory profile error: ${response.status} ${response.statusText}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const results = data?.searchResults?.results || [];
+
+    const items: MemoryItem[] = [];
+    const seenContents = new Set<string>();
+
+    for (const r of results) {
+      const content = r.memory;
+      if (!content || seenContents.has(content)) continue;
+      seenContents.add(content);
+      const docId = r.documents?.[0]?.id || "";
+      if (docId) {
+        items.push({ id: docId, content });
+      }
+    }
+
+    return items;
+  } catch (error) {
+    console.error("Failed to fetch memories with IDs from Supermemory:", error);
+    return [];
+  }
+}
+
+export async function getNPCMemoriesForFront(npcId: string): Promise<MemoryItem[]> {
   const state = getGameState();
   const containerTag = `${npcId}_${state.sessionId}`;
+  const memories = await getNPCMemoriesWithIds(containerTag, "");
+  return memories.filter(f => !f.content.startsWith("Conversation on Day"));
+}
+
+export async function searchNPCMemories(npcId: string, query: string): Promise<MemoryItem[]> {
+  const state = getGameState();
+  const containerTag = `${npcId}_${state.sessionId}`;
+  const memories = await getNPCMemoriesWithIds(containerTag, query);
+  return memories.filter(f => !f.content.startsWith("Conversation on Day"));
+}
+
+export async function deleteSupermemoryDocument(docId: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${supermemoryUrl}/v3/documents/${docId}`, {
+      method: "DELETE",
+      headers: {
+        "Authorization": `Bearer ${supermemoryKey}`
+      }
+    });
+    return response.status === 204 || response.status === 200;
+  } catch (error) {
+    console.error("Failed to delete document from Supermemory:", error);
+    return false;
+  }
+}
+
+// Player journal operations
+export async function addPlayerJournalNote(note: string): Promise<void> {
+  const state = getGameState();
+  const containerTag = `player_${state.sessionId}`;
+  await addMemoryToSupermemory(containerTag, note);
+}
+
+export async function getPlayerJournalNotes(): Promise<string[]> {
+  const state = getGameState();
+  const containerTag = `player_${state.sessionId}`;
   const memories = await getNPCMemories(containerTag, "");
-  return memories.filter(f => !f.startsWith("Conversation on Day"));
+  return memories;
 }
 
 // LLM Interaction Helpers
@@ -276,7 +370,13 @@ export async function talkToNPC(npcId: string, playerMessage: string): Promise<{
     ? relevantMemories.map(m => `- ${m}`).join("\n")
     : "- You don't have any specific memories about this or the traveler yet.";
 
-  // 2. Build the LLM prompt
+  // 2. Retrieve player journal notes from Supermemory for self-contradiction checking
+  const playerJournalNotes = await getPlayerJournalNotes();
+  const journalContext = playerJournalNotes.length > 0
+    ? playerJournalNotes.map(n => `- ${n}`).join("\n")
+    : "- The player has not recorded any past actions or statements in their journal.";
+
+  // 3. Build the LLM prompt
   const systemPrompt = `You are playing the role of ${npc.name}, the ${npc.role} in a medieval village simulation.
 Personality: ${npc.personality}
 Relationships: ${npc.relationships}
@@ -290,11 +390,14 @@ Current relationship metrics with the Player:
 Here are your retrieved memories & facts about the player or village:
 ${memoriesContext}
 
+Here is the player's private journal / statement logs (representing what the player has done, claimed, or told others in the village):
+${journalContext}
+
 The player says: "${playerMessage}"
 
 Generate your response as a valid JSON object matching the schema below. Keep the dialogue concise (1-3 sentences), highly thematic, and in character.
 You must analyze the player's message:
-- Check for contradictions or lies: compare what the player says against your memories. For example, if your memories say "The player claimed they are a knight" and they now say "I'm just a simple traveler", that is a contradiction/lie!
+- Check for contradictions or lies: compare what the player says against your memories AND what they've claimed to other NPCs in their journal logs. For example, if they told someone else they are a peasant, but they tell you they are a knight, or if your memories say they claimed they are a knight and they now say "I'm just a simple traveler", that is a contradiction/lie!
 - Adjust relationship metrics based on the interaction. Trust should decrease if you detect a lie or inconsistency. Friendship increases with friendliness. Respect increases with competence/authority.
 - Extract any new concrete facts about the player or their statements to store in your memory.
 
@@ -306,7 +409,7 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
   "fearChange": number,
   "friendshipChange": number,
   "contradictionDetected": boolean,
-  "contradictionReason": "Explain what contradiction you noticed in their statements relative to your memories (leave empty if none)",
+  "contradictionReason": "Explain what contradiction you noticed in their statements relative to your memories or their journal (leave empty if none)",
   "newFactsToRemember": ["Fact 1", "Fact 2"]
 }
 `;
@@ -321,13 +424,13 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
     const jsonStr = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
     const data = JSON.parse(jsonStr);
 
-    // 3. Update NPC metrics in Game State
+    // 4. Update NPC metrics in Game State
     npc.metrics.trust = Math.max(0, Math.min(100, npc.metrics.trust + (data.trustChange || 0)));
     npc.metrics.respect = Math.max(0, Math.min(100, npc.metrics.respect + (data.respectChange || 0)));
     npc.metrics.fear = Math.max(0, Math.min(100, npc.metrics.fear + (data.fearChange || 0)));
     npc.metrics.friendship = Math.max(0, Math.min(100, npc.metrics.friendship + (data.friendshipChange || 0)));
 
-    // 4. Save player message and NPC response in conversation log
+    // 5. Save player message and NPC response in conversation log
     state.conversations[npcId].push({
       sender: "player",
       content: playerMessage,
@@ -339,7 +442,7 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
 
-    // 5. Ingest new facts into Supermemory
+    // 6. Ingest new facts into Supermemory
     if (data.newFactsToRemember && data.newFactsToRemember.length > 0) {
       for (const fact of data.newFactsToRemember) {
         await addMemoryToSupermemory(containerTag, `The player told you: ${fact}`);
@@ -458,6 +561,9 @@ Return your answer as a JSON object matching this schema (Return ONLY JSON, no m
   // Save logs and advance day
   state.gossipLogs.push(...newGossipLogs);
   state.day += 1;
+  // Reward player with 15 coins for surviving the day
+  state.coins = (state.coins ?? 30) + 15;
+  
   checkGameEndings(state);
   saveGameState(state);
 

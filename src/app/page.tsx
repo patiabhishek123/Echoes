@@ -4,9 +4,9 @@ import { useEffect, useState, useRef } from "react";
 import { 
   MessageSquare, Hammer, Shield, Coins, Crown, 
   AlertTriangle, Moon, RefreshCw, BookOpen, Activity,
-  ChevronRight, User, Loader2
+  ChevronRight, User, Loader2, Heart, Info, Clock, Sparkles
 } from "lucide-react";
-import { GameState, NPC, ChatMessage, GossipLog } from "@/lib/gameService";
+import { GameState, NPC, ChatMessage, GossipLog, MemoryItem } from "@/lib/gameService";
 
 const npcIcons: Record<string, any> = {
   blacksmith: Hammer,
@@ -26,6 +26,20 @@ const nodeCoordinates: Record<string, { x: number; y: number }> = {
 
 export default function GamePage() {
   const [state, setState] = useState<GameState | null>(null);
+  const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
+  const [onboardingStep, setOnboardingStep] = useState<number>(1);
+  const [mouseOffset, setMouseOffset] = useState({ x: 0, y: 0 });
+  
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const x = (e.clientX - window.innerWidth / 2) / 25;
+      const y = (e.clientY - window.innerHeight / 2) / 25;
+      setMouseOffset({ x, y });
+    };
+    window.addEventListener("mousemove", handleMouseMove);
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, []);
+
   const [selectedNpcId, setSelectedNpcId] = useState<string>("blacksmith");
   const [inputValue, setInputValue] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(true);
@@ -37,11 +51,25 @@ export default function GamePage() {
     message: string;
     type: "info" | "success" | "warning" | "error";
   } | null>(null);
-  const [npcMemories, setNpcMemories] = useState<Record<string, string[]>>({});
+  const [npcMemories, setNpcMemories] = useState<Record<string, MemoryItem[]>>({});
   const [loadingMemories, setLoadingMemories] = useState<boolean>(false);
-  const [activeConsoleTab, setActiveConsoleTab] = useState<"mind" | "vault">("mind");
+  const [activeConsoleTab, setActiveConsoleTab] = useState<"mind" | "vault" | "journal">("mind");
+  const [shakePortrait, setShakePortrait] = useState<boolean>(false);
+  const [displayedDialogue, setDisplayedDialogue] = useState<string>(
+    "Select a building on the map above to walk to and talk to that inhabitant."
+  );
+
+  // New hooks for Supermemory extended features
+  const [playerNotes, setPlayerNotes] = useState<string[]>([]);
+  const [loadingNotes, setLoadingNotes] = useState<boolean>(false);
+  const [journalInput, setJournalInput] = useState<string>(" ");
+  const [vectorQuery, setVectorQuery] = useState<string>("");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
+
+  const conversationsForTypewriter = state?.conversations[selectedNpcId] || [];
+  const latestNpcMessage = conversationsForTypewriter.slice().reverse().find(c => c.sender === "npc")?.content || 
+    `Select Hagar, Kael, Silas, or Evelyn to converse with them and discover their memories.`;
 
   // Fetch current game state
   const fetchState = async () => {
@@ -50,7 +78,8 @@ export default function GamePage() {
       const data = await res.json();
       setState(data);
       if (data) {
-        fetchMemories(data.sessionId);
+        fetchMemories();
+        fetchJournalNotes();
       }
     } catch (error) {
       showNotification("FAILED TO RETRIEVE VILLAGE STATE LOGS.", "error");
@@ -59,11 +88,10 @@ export default function GamePage() {
     }
   };
 
-  // Fetch memories using our secure backend API to prevent CORS issues
-  const fetchMemories = async (sessionId: string) => {
-    if (!sessionId) return;
+  // Fetch NPC memories with source document IDs
+  const fetchMemories = async () => {
     setLoadingMemories(true);
-    const memories: Record<string, string[]> = {};
+    const memories: Record<string, MemoryItem[]> = {};
     try {
       for (const npcId of ["blacksmith", "guard", "merchant", "mayor"]) {
         const res = await fetch(`/api/memories?npcId=${npcId}`);
@@ -80,6 +108,22 @@ export default function GamePage() {
     }
   };
 
+  // Fetch player notes from their second brain
+  const fetchJournalNotes = async () => {
+    setLoadingNotes(true);
+    try {
+      const res = await fetch("/api/journal");
+      if (res.ok) {
+        const data = await res.json();
+        setPlayerNotes(data);
+      }
+    } catch (e) {
+      console.error("Error loading journal notes:", e);
+    } finally {
+      setLoadingNotes(false);
+    }
+  };
+
   useEffect(() => {
     fetchState();
   }, []);
@@ -87,6 +131,24 @@ export default function GamePage() {
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [state?.conversations, selectedNpcId]);
+
+  useEffect(() => {
+    if (isTalking) {
+      setDisplayedDialogue("");
+      return;
+    }
+    let index = 0;
+    setDisplayedDialogue("");
+    const interval = setInterval(() => {
+      if (index < latestNpcMessage.length) {
+        setDisplayedDialogue((prev) => prev + latestNpcMessage.charAt(index));
+        index++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 15);
+    return () => clearInterval(interval);
+  }, [latestNpcMessage, isTalking]);
 
   const showNotification = (message: string, type: "info" | "success" | "warning" | "error") => {
     setLastNotification({ message, type });
@@ -130,6 +192,8 @@ export default function GamePage() {
       setState(freshState);
 
       if (result.contradiction?.detected) {
+        setShakePortrait(true);
+        setTimeout(() => setShakePortrait(false), 500);
         showNotification(
           `CONTRADICTION DETECTED! ${freshState.npcs[selectedNpcId].name} noticed an inconsistency: "${result.contradiction.reason}"`,
           "warning"
@@ -145,13 +209,101 @@ export default function GamePage() {
         }
       }
 
-      fetchMemories(freshState.sessionId);
+      fetchMemories();
+      fetchJournalNotes();
 
     } catch (error) {
       setState(originalState);
       showNotification("FAILED TO COMMUNICATE WITH VILLAGER.", "error");
     } finally {
       setIsTalking(false);
+    }
+  };
+
+  // Add a manual note to the player journal
+  const handleAddJournalNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!journalInput.trim()) return;
+
+    const note = journalInput;
+    setJournalInput("");
+    setLoadingNotes(true);
+    try {
+      const res = await fetch("/api/journal", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content: note })
+      });
+      if (res.ok) {
+        showNotification("NOTE INGESTED INTO SECOND BRAIN MATRIX.", "success");
+        fetchJournalNotes();
+      } else {
+        showNotification("FAILED TO INGEST NOTE.", "error");
+      }
+    } catch (e) {
+      showNotification("JOURNAL CONNECTION INTERRUPTED.", "error");
+    } finally {
+      setLoadingNotes(false);
+    }
+  };
+
+  // Run a vector hack scanning search on the selected NPC's memories
+  const handleVectorSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!vectorQuery.trim() || !state) return;
+
+    if ((state.coins ?? 30) < 5) {
+      showNotification("INSUFFICIENT COINS FOR VECTOR SCAN (NEEDS 5)", "error");
+      return;
+    }
+
+    setLoadingMemories(true);
+    try {
+      const res = await fetch(`/api/memories?npcId=${selectedNpcId}&query=${encodeURIComponent(vectorQuery)}`);
+      if (res.ok) {
+        const data = await res.json();
+        setNpcMemories(prev => ({
+          ...prev,
+          [selectedNpcId]: data.memories
+        }));
+        setState(prev => prev ? { ...prev, coins: data.coins } : null);
+        showNotification("VECTOR SCAN COMPLETE. 5 COINS DEDUCTED.", "success");
+      } else {
+        const err = await res.json();
+        showNotification(err.error || "SCAN FAILED.", "error");
+      }
+    } catch (e) {
+      showNotification("SCAN CONNECTION FAILED.", "error");
+    } finally {
+      setLoadingMemories(false);
+    }
+  };
+
+  // Consume Oblivion Potion to erase an NPC memory
+  const handleWipeMemory = async (docId: string) => {
+    if (!state) return;
+    if ((state.coins ?? 30) < 20) {
+      showNotification("INSUFFICIENT COINS FOR OBLIVION POTION (NEEDS 20)", "error");
+      return;
+    }
+
+    if (!confirm("USE OBLIVION POTION TO ERASE THIS FACT? (COSTS 20 COINS)")) return;
+
+    try {
+      const res = await fetch(`/api/memories?docId=${docId}`, {
+        method: "DELETE"
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setState(prev => prev ? { ...prev, coins: data.coins } : null);
+        showNotification("POTION CONSUMED. MEMORY PERMANENTLY ERASED.", "success");
+        fetchMemories();
+      } else {
+        const err = await res.json();
+        showNotification(err.error || "POTION BOILED OVER (FAILED).", "error");
+      }
+    } catch (e) {
+      showNotification("POTION INTERRUPTED.", "error");
     }
   };
 
@@ -183,7 +335,8 @@ export default function GamePage() {
             setGossipAnimationLog([]);
             setState(data.state);
             showNotification(`DAY ${data.state.day} STARTED. MEMORY VAULTS STABILIZED.`, "info");
-            fetchMemories(data.state.sessionId);
+            fetchMemories();
+            fetchJournalNotes();
             setIsGossiping(false);
           }
         }, 5000);
@@ -211,8 +364,12 @@ export default function GamePage() {
       setState(data);
       setSelectedNpcId("blacksmith");
       setNpcMemories({});
+      setPlayerNotes([]);
       showNotification("SYSTEM DEFRAGMENTED. SEED MEMORIES ESTABLISHED.", "success");
-      setTimeout(() => fetchMemories(data.sessionId), 1000);
+      setTimeout(() => {
+        fetchMemories();
+        fetchJournalNotes();
+      }, 1000);
     } catch (e) {
       showNotification("FAILED TO EXECUTE REBOOT.", "error");
     } finally {
@@ -220,178 +377,752 @@ export default function GamePage() {
     }
   };
 
-  // Helper to generate terminal progress bar
+  // Helper to generate RPG style progress bar
   const renderProgressBar = (value: number) => {
-    const barsCount = Math.round(value / 10);
-    const emptyCount = 10 - barsCount;
-    return `[${"█".repeat(barsCount)}${"░".repeat(emptyCount)}] ${value}%`;
+    return (
+      <div className="w-24 bg-[#2b1f1d] border border-[#573a35] rounded-full h-3 overflow-hidden shadow-inner flex shrink-0">
+        <div className="bg-[#ff3b30] h-full transition-all duration-300" style={{ width: `${value}%` }} />
+      </div>
+    );
   };
 
   if (loading || !state) {
     return (
-      <div className="flex-grow flex flex-col items-center justify-center bg-[#05010b] text-[#00f0ff] min-h-screen scanlines">
-        <Loader2 className="w-12 h-12 text-[#00f0ff] animate-spin mb-4" />
-        <p className="font-mono tracking-widest text-xs uppercase animate-pulse">INITIATING COGNITIVE TERMINAL SYSTEM...</p>
+      <div className="flex-grow flex flex-col items-center justify-center bg-[#1c120c] text-[#ebdcb9] min-h-screen">
+        <Loader2 className="w-12 h-12 text-[#855b32] animate-spin mb-4" />
+        <p className="font-mono tracking-widest text-xs uppercase animate-pulse">LOADING VILLAGE CHRONICLES...</p>
+      </div>
+    );
+  }
+
+  if (showOnboarding) {
+    return (
+      <div className="flex-grow flex flex-col items-center justify-center bg-gradient-to-br from-[#fff7e6] via-[#ffdca3] to-[#e8be90] text-[#382c22] min-h-screen p-4 md:p-6 relative overflow-hidden select-none">
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes slow-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          @keyframes float-gentle {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+          }
+          .animate-slow-spin {
+            animation: slow-spin 120s linear infinite;
+          }
+          .animate-float-gentle {
+            animation: float-gentle 6s ease-in-out infinite;
+          }
+          .pixelated {
+            image-rendering: pixelated;
+          }
+        `}} />
+
+        {/* Parallax Background Layer 1: Rotating Sunburst */}
+        <div 
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{
+            transform: `translate(${mouseOffset.x * 0.15}px, ${mouseOffset.y * 0.15}px)`,
+            transition: 'transform 0.15s ease-out'
+          }}
+        >
+          <svg className="w-[180%] h-[180%] opacity-[0.05] animate-slow-spin" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="50" fill="none" />
+            {Array.from({ length: 18 }).map((_, i) => {
+              const angle = i * 20;
+              return (
+                <path
+                  key={i}
+                  d={`M50,50 L${50 + 100 * Math.cos((angle * Math.PI) / 180)},${50 + 100 * Math.sin((angle * Math.PI) / 180)} L${50 + 100 * Math.cos(((angle + 10) * Math.PI) / 180)},${50 + 100 * Math.sin(((angle + 10) * Math.PI) / 180)} Z`}
+                  fill="#38251b"
+                />
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Parallax Background Layer 2: Pixel Clouds */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            transform: `translate(${mouseOffset.x * 0.4}px, ${mouseOffset.y * 0.4}px)`,
+            transition: 'transform 0.2s ease-out'
+          }}
+        >
+          {/* Cloud 1 */}
+          <svg className="absolute w-44 h-16 opacity-30" style={{ top: '12%', left: '10%' }} viewBox="0 0 100 40">
+            <path d="M10,30 L90,30 L90,20 L80,20 L80,15 L70,15 L70,10 L30,10 L30,15 L20,15 L20,20 L10,20 Z" fill="#ffffff" />
+          </svg>
+          {/* Cloud 2 */}
+          <svg className="absolute w-56 h-20 opacity-25" style={{ top: '22%', right: '12%' }} viewBox="0 0 120 50">
+            <path d="M10,40 L110,40 L110,30 L100,30 L100,20 L90,20 L90,15 L40,15 L40,20 L30,20 L20,20 L20,30 L10,30 Z" fill="#ffffff" />
+          </svg>
+          {/* Cloud 3 */}
+          <svg className="absolute w-36 h-12 opacity-20" style={{ bottom: '20%', left: '15%' }} viewBox="0 0 100 40">
+            <path d="M10,30 L90,30 L90,20 L80,20 L80,15 L70,15 L70,10 L30,10 L30,15 L20,15 L20,20 L10,20 Z" fill="#ffffff" />
+          </svg>
+        </div>
+
+        {/* Parallax Background Layer 3: Floating digital cells */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            transform: `translate(${mouseOffset.x * 0.85}px, ${mouseOffset.y * 0.85}px)`,
+            transition: 'transform 0.3s ease-out'
+          }}
+        >
+          <div className="absolute w-4 h-4 bg-amber-400 opacity-20 rounded border border-amber-300 top-[35%] left-[28%]" />
+          <div className="absolute w-5 h-5 bg-[#00f0ff] opacity-15 rounded border border-[#00f0ff] bottom-[28%] right-[32%]" />
+          <div className="absolute w-3 h-3 bg-rose-400 opacity-20 rounded border border-rose-300 top-[75%] left-[18%]" />
+        </div>
+
+        {/* Onboarding Dialog Card */}
+        <div 
+          className="relative max-w-2xl w-full bg-[#ebdcb9] border-4 border-[#38251b] rounded-lg p-6 md:p-8 text-[#382c22] shadow-[0_20px_50px_rgba(56,37,27,0.35)] z-10 flex flex-col gap-6"
+          style={{
+            transform: `translate(${-mouseOffset.x * 0.15}px, ${-mouseOffset.y * 0.15}px)`,
+            transition: 'transform 0.12s ease-out'
+          }}
+        >
+          <div className="absolute top-2 left-3 font-mono text-[9px] text-[#855b32]">TUTORIAL_GUIDE_v1.3.0</div>
+          <div className="absolute top-2 right-3 font-mono text-[9px] text-[#855b32] animate-pulse">● MEMO CONNECTION ONLINE</div>
+
+          {/* Tutorial Steps Progress Bar */}
+          <div className="flex justify-between items-center bg-[#38251b] px-4 py-2 rounded border border-[#5c4033] mt-2 shrink-0">
+            <span className="font-mono text-[10px] font-bold text-amber-300">TUTORIAL GUIDE PHASE</span>
+            <div className="flex items-center space-x-1.5">
+              {[1, 2, 3, 4].map((step) => (
+                <div
+                  key={step}
+                  className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center font-mono text-[8px] font-bold transition-all ${
+                    onboardingStep === step
+                      ? "bg-amber-500 border-amber-300 text-slate-900 scale-110"
+                      : onboardingStep > step
+                      ? "bg-emerald-600 border-emerald-400 text-emerald-100"
+                      : "bg-[#ebdcb9]/10 border-stone-600 text-stone-500"
+                  }`}
+                >
+                  {step}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Mascot speech box & portrait grid */}
+          <div className="flex flex-col md:flex-row gap-5 items-stretch bg-[#ebdcb9] border-4 border-[#38251b] rounded p-4 relative shadow-md">
+            
+            {/* Mascot character portrait */}
+            <div className="w-28 h-28 shrink-0 flex flex-col items-center justify-center bg-[#ebdcb9] border-2 border-[#855b32] rounded relative shadow-inner mx-auto md:mx-0 animate-float-gentle">
+              <img 
+                src="/portraits/mascot.png" 
+                alt="Memo the AI assistant owl" 
+                className="w-full h-full object-cover pixelated" 
+              />
+              <div className="absolute bottom-1 bg-black/80 px-1.5 py-0.5 rounded text-[8px] font-mono text-[#00f0ff] font-bold tracking-widest uppercase">
+                MEMO
+              </div>
+            </div>
+
+            {/* Bubble speech */}
+            <div className="flex-1 flex flex-col justify-between bg-[#fcf8ef] border-2 border-[#6b533e]/30 rounded p-4 relative">
+              {/* Little speech tail */}
+              <div className="hidden md:block absolute left-[-8px] top-10 w-0 h-0 border-y-8 border-y-transparent border-r-8 border-r-[#6b533e]/30" />
+              <div className="hidden md:block absolute left-[-6px] top-10 w-0 h-0 border-y-8 border-y-transparent border-r-8 border-r-[#fcf8ef]" />
+
+              <div className="font-mono text-xs leading-relaxed text-[#382c22]">
+                {onboardingStep === 1 && (
+                  <>
+                    <p className="mb-2.5">
+                      <strong className="text-[#a84424] text-sm font-bold block mb-1">WELCOME TO THE ECHOES MATRIX!</strong>
+                      Greetings, Traveler! I am <strong className="text-amber-900">Memo</strong>, your personal cognitive digital owl. I will guide you through this strange village.
+                    </p>
+                    <p>
+                      In Echoes, the inhabitants share a unified memory database. You must be careful with what stories you weave, or their database will detect contradictions!
+                    </p>
+                  </>
+                )}
+
+                {onboardingStep === 2 && (
+                  <>
+                    <p className="mb-2.5">
+                      <strong className="text-[#a84424] text-sm font-bold block mb-1">THE MEMORY TRAP & RELATIONSHIPS</strong>
+                      Every word you type to an NPC is parsed, analyzed, and ingested into their personal Supermemory vector tags.
+                    </p>
+                    <p>
+                      If you tell Hagar you are a <strong>knight</strong> but Silas thinks you are a <strong>peasant</strong>, they will treat you with suspicion! Watch out for the metrics in your relation matrix: <strong className="text-amber-900">Trust, Respect, Fear, and Friendship</strong>.
+                    </p>
+                  </>
+                )}
+
+                {onboardingStep === 3 && (
+                  <>
+                    <p className="mb-2.5">
+                      <strong className="text-[#a84424] text-sm font-bold block mb-1">CAMPFIRE GOSSIP NIGHT</strong>
+                      At the end of each day, when you click the <strong className="text-[#a84424]">SLEEP</strong> button, the campfire gossip night triggers.
+                    </p>
+                    <p>
+                      NPCs gather at the inn to exchange rumors they've logged about you. If Silas knows a trade secret, he might sell it to Mayor Evelyn. Facts propagate!
+                    </p>
+                  </>
+                )}
+
+                {onboardingStep === 4 && (
+                  <>
+                    <p className="mb-2.5">
+                      <strong className="text-[#a84424] text-sm font-bold block mb-1">YOUR EXTRAPOLATED TOOLS</strong>
+                      To survive, I have built special interfaces for you:
+                    </p>
+                    <ul className="space-y-1.5 mt-2 text-[10px] list-disc pl-4 text-stone-750">
+                      <li><strong>✏️ My Journal:</strong> Write down your covers so you never contradict yourself.</li>
+                      <li><strong className="text-purple-800">🔮 Vector Hacking (5 coins):</strong> Query an NPC's memory space for keywords.</li>
+                      <li><strong className="text-emerald-800">🧪 Oblivion Potion (20 coins):</strong> Permanently wipe any dangerous fact before it spreads!</li>
+                    </ul>
+                  </>
+                )}
+              </div>
+            </div>
+
+          </div>
+
+          {/* Action Navigation Buttons */}
+          <div className="flex justify-between items-center pt-2 border-t-2 border-[#38251b]/20">
+            {onboardingStep > 1 ? (
+              <button
+                type="button"
+                onClick={() => setOnboardingStep((prev) => prev - 1)}
+                className="bg-[#ebdcb9] hover:bg-stone-300 text-stone-800 border-2 border-[#38251b] font-mono text-[10px] font-bold px-4 py-2 rounded cursor-pointer transition shadow"
+              >
+                [BACK]
+              </button>
+            ) : (
+              <div />
+            )}
+
+            {onboardingStep < 4 ? (
+              <button
+                type="button"
+                onClick={() => setOnboardingStep((prev) => prev + 1)}
+                className="bg-[#855b32] hover:bg-[#a87442] text-amber-100 border-2 border-[#38251b] font-mono text-[10px] font-bold px-5 py-2 rounded cursor-pointer transition shadow"
+              >
+                [NEXT PHASE]
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setShowOnboarding(false);
+                  showNotification("COGNITIVE CONNECTION STABILIZED. WELCOME TO ECHOES.", "success");
+                }}
+                className="bg-emerald-800 hover:bg-emerald-750 text-emerald-100 border-4 border-[#38251b] font-mono text-xs font-bold tracking-widest px-6 py-2.5 rounded cursor-pointer transition shadow-lg inline-flex items-center space-x-2 select-none animate-pulse hover:animate-none"
+              >
+                <span>[ENTER ECHOES VILLAGE]</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            )}
+          </div>
+        </div>
+        <div className="scanlines pointer-events-none" />
       </div>
     );
   }
 
   const selectedNpc = state.npcs[selectedNpcId];
   const conversations = state.conversations[selectedNpcId] || [];
-  const latestNpcMessage = conversations.slice().reverse().find(c => c.sender === "npc")?.content || 
-    `Select a target from the location terminal below and state your purpose.`;
+
+  const playerPositions: Record<string, { x: string; y: string }> = {
+    blacksmith: { x: "21%", y: "38%" },
+    guard: { x: "69%", y: "38%" },
+    merchant: { x: "21%", y: "68%" },
+    mayor: { x: "69%", y: "68%" },
+  };
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#05010b] text-[#e2e8f0] relative select-none font-sans overflow-hidden pb-10">
+    <div className="min-h-screen flex flex-col bg-[#1c120c] text-[#ebdcb9] relative select-none font-sans overflow-hidden pb-10">
       
-      {/* Scanline Overlay */}
-      <div className="scanlines" />
+      {/* Top HUD Bar */}
+      <div className="bg-[#2d1b11] border-b-4 border-[#38251b] text-[#ebdcb9] h-14 flex items-center justify-between px-6 z-40 select-none shadow-lg">
+        {/* Left Side: HP & Coins */}
+        <div className="flex items-center space-x-6">
+          <div className="flex items-center space-x-2 bg-black/20 px-3 py-1 rounded border border-[#5c4033]">
+            <Heart className="w-4 h-4 text-red-500 fill-red-500 animate-pulse" />
+            <span className="font-mono text-xs font-bold text-red-400">VITALITY:</span>
+            <div className="rpg-health-bar w-24">
+              <div className="rpg-health-fill" style={{ width: "100%" }} />
+            </div>
+            <span className="font-mono text-[10px] text-red-400">100/100</span>
+          </div>
 
-      {/* Top Banner (VA-11 Hall-A Marquee) */}
-      <div className="bg-[#00f0ff] text-[#05010b] h-6 flex items-center overflow-hidden border-b border-[#00f0ff] z-40 select-none">
-        <div className="animate-marquee inline-block font-mono text-[10px] font-bold tracking-widest uppercase">
-          ECHOES: CYBERPUNK SOCIAL SIMULATION • POWERED BY SUPERMEMORY AI • STATUS: OPERATIONAL • DAY: {state.day} • ECHOES: CYBERPUNK SOCIAL SIMULATION • POWERED BY SUPERMEMORY AI • STATUS: OPERATIONAL • DAY: {state.day} •
+          <div className="flex items-center space-x-2 bg-black/20 px-3 py-1 rounded border border-[#5c4033]">
+            <Coins className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+            <span className="font-mono text-xs font-bold text-yellow-500">COINS:</span>
+            <span className="font-mono text-xs font-bold text-yellow-400">{state.coins ?? 30}</span>
+          </div>
+        </div>
+
+        {/* Center: Village Day & Clock with Sleep action */}
+        <div className="flex items-center space-x-3 bg-[#38251b] px-4 py-1.5 rounded-full border-2 border-[#5c4033]">
+          <Clock className="w-4 h-4 text-amber-500" />
+          <span className="font-mono text-xs font-bold uppercase tracking-wider text-amber-300">DAY {state.day} • {isGossiping ? "NIGHT CYCLE" : "DAYTIME"}</span>
+          <button
+            onClick={handleAdvanceDay}
+            disabled={isGossiping || state.gameEnded}
+            className="bg-[#a84424] hover:bg-[#c2512f] disabled:opacity-40 text-amber-100 font-mono text-[9px] font-bold px-2.5 py-0.5 rounded border border-[#5c4033] cursor-pointer transition uppercase"
+          >
+            {isGossiping ? "SLEEPING..." : "SLEEP"}
+          </button>
+        </div>
+
+        {/* Right Side: Controller prompts layout */}
+        <div className="flex items-center space-x-2 text-[10px] font-mono text-amber-600/70">
+          <span className="bg-[#38251b] px-2 py-0.5 rounded border border-[#5c4033] text-amber-300 font-bold">LT</span>
+          <span>SYSTEM</span>
+          <span className="bg-[#38251b] px-2 py-0.5 rounded border border-[#5c4033] text-amber-300 font-bold">RT</span>
         </div>
       </div>
 
       {/* Main Body */}
-      <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full px-6 pt-6 gap-6 relative z-10 crt-screen">
+      <div className="flex-1 flex flex-col max-w-5xl mx-auto w-full px-6 pt-6 gap-6 relative z-10">
         
-        {/* Upper Screen View: Player, Location, NPC monitors */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+        {/* Village Map Container */}
+        <div className="relative w-full aspect-[2.4/1] border-4 border-[#38251b] rounded-lg overflow-hidden bg-[#7ba342] shadow-2xl p-2 select-none"
+             style={{ 
+               backgroundImage: 'radial-gradient(#4d701e 1.5px, transparent 1.5px), radial-gradient(#4d701e 1.5px, #7ba342 1.5px)', 
+               backgroundSize: '24px 24px', 
+               backgroundPosition: '0 0, 12px 12px' 
+             }}>
           
-          {/* Player Monitor */}
-          <div className="monitor-bezel rounded p-4 flex flex-col items-center justify-center text-center">
-            {/* Design accents */}
-            <div className="absolute top-2 left-2 flex space-x-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff] animate-pulse" />
-              <span className="w-1.5 h-1.5 bg-[#2d2640] rounded-full" />
-            </div>
-            <span className="absolute top-2 right-3 font-mono text-[9px] text-slate-600">SYS_P01</span>
-            
-            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest mb-3 uppercase">PLAYER MONITOR</span>
-            
-            <div className="w-28 h-28 monitor-screen rounded-full overflow-hidden flex items-center justify-center bg-slate-900 border-2 border-[#00f0ff]">
-              <div className="w-full h-full relative flex items-center justify-center bg-[#090312]">
-                <User className="w-16 h-16 text-[#00f0ff] opacity-80" />
-                {/* Neon blueprint circle */}
-                <div className="absolute inset-2 rounded-full border border-dashed border-[#00f0ff]/30 animate-spin" style={{ animationDuration: '20s' }} />
+          <style dangerouslySetInnerHTML={{__html: `
+            @keyframes radar-sweep-line {
+              0% { top: 0%; opacity: 0; }
+              10% { opacity: 1; }
+              90% { opacity: 1; }
+              100% { top: 100%; opacity: 0; }
+            }
+            .radar-sweep-line {
+              animation: radar-sweep-line 3s linear infinite;
+            }
+            .map-parallax-layer {
+              position: absolute;
+              inset: 0;
+              width: 100%;
+              height: 100%;
+              pointer-events: none;
+            }
+            .map-parallax-layer-interactive {
+              position: absolute;
+              inset: 0;
+              width: 100%;
+              height: 100%;
+            }
+          `}} />
+
+          {/* PARALLAX LAYER 1: Grassy details, trees, flowers, rocks */}
+          <div className="map-parallax-layer scale-[1.03]"
+               style={{ 
+                 transform: `translate(${mouseOffset.x * 0.05}px, ${mouseOffset.y * 0.05}px)`,
+                 transition: 'transform 0.15s ease-out' 
+               }}>
+            {/* Top-Center Trees */}
+            <div className="absolute top-[12%] left-[45%] flex space-x-1 opacity-70">
+              <div className="w-5 h-8 bg-emerald-950 border border-emerald-950 rounded-t-full relative">
+                <div className="absolute top-1 left-1 w-1.5 h-1.5 bg-emerald-750 rounded-full" />
               </div>
+              <div className="w-4 h-6 bg-emerald-950 border border-emerald-950 rounded-t-full relative -mt-1" />
             </div>
+            {/* Bottom-Center Trees */}
+            <div className="absolute top-[78%] left-[45%] flex space-x-1 opacity-70">
+              <div className="w-4 h-6 bg-emerald-950 border border-emerald-950 rounded-t-full relative" />
+              <div className="w-5 h-8 bg-emerald-950 border border-emerald-950 rounded-t-full relative -mt-1" />
+            </div>
+            {/* Top-Left trees */}
+            <div className="absolute top-[3%] left-[4%] flex space-x-1 opacity-75">
+              <div className="w-4 h-6 bg-emerald-900 border border-emerald-950 rounded-t-full relative" />
+              <div className="w-5 h-7 bg-emerald-950 border border-emerald-950 rounded-t-full relative -mt-1" />
+            </div>
+            {/* Bottom-Left trees */}
+            <div className="absolute top-[82%] left-[4%] flex space-x-1 opacity-75">
+              <div className="w-5 h-7 bg-emerald-950 border border-emerald-950 rounded-t-full relative" />
+              <div className="w-4 h-6 bg-emerald-900 border border-emerald-950 rounded-t-full relative -mt-1" />
+            </div>
+            {/* Rocks & Flowers */}
+            <div className="absolute top-[22%] left-[8%] w-2 h-1.5 bg-stone-500 rounded-full border border-stone-750" />
+            <div className="absolute top-[15%] left-[90%] w-2 h-1.5 bg-stone-500 rounded-full border border-stone-750" />
+            <div className="absolute top-[84%] left-[92%] w-1.5 h-1.5 rounded-full bg-yellow-300 animate-ping" />
+            <div className="absolute top-[28%] left-[4%] w-1.5 h-1.5 rounded-full bg-orange-400 animate-ping" style={{ animationDelay: '0.8s' }} />
+          </div>
+
+          {/* PARALLAX LAYER 2: Connecting Sand Paths & Central Cobblestone plaza */}
+          <div className="map-parallax-layer scale-[1.03]"
+               style={{ 
+                 transform: `translate(${mouseOffset.x * 0.1}px, ${mouseOffset.y * 0.1}px)`,
+                 transition: 'transform 0.15s ease-out' 
+               }}>
+            {/* Top Horizontal Path */}
+            <div className="absolute top-[40%] left-[10%] w-[80%] h-[8%] bg-[#ebd197] border-y-2 border-[#cbb177]/50" 
+              style={{ backgroundImage: 'radial-gradient(#dfc68b 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
+            {/* Bottom Horizontal Path */}
+            <div className="absolute top-[70%] left-[10%] w-[80%] h-[8%] bg-[#ebd197] border-y-2 border-[#cbb177]/50" 
+              style={{ backgroundImage: 'radial-gradient(#dfc68b 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
+            {/* Left Vertical Path */}
+            <div className="absolute top-[40%] left-[22%] w-[8%] h-[38%] bg-[#ebd197] border-x-2 border-[#cbb177]/50" 
+              style={{ backgroundImage: 'radial-gradient(#dfc68b 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
+            {/* Right Vertical Path */}
+            <div className="absolute top-[40%] left-[70%] w-[8%] h-[38%] bg-[#ebd197] border-x-2 border-[#cbb177]/50" 
+              style={{ backgroundImage: 'radial-gradient(#dfc68b 1px, transparent 1px)', backgroundSize: '8px 8px' }} />
             
-            <span className="font-mono text-xs text-emerald-400 mt-3 font-bold tracking-wider uppercase">SIR GALAHAD</span>
-            <span className="font-mono text-[10px] text-slate-500 mt-1 uppercase">Traveler Identity</span>
+            {/* Central Cobblestone plaza */}
+            <div className="absolute top-[44%] left-[39%] w-[22%] h-[30%] bg-[#5c6875] rounded-full border-4 border-[#3c4752] shadow-inner flex items-center justify-center">
+              <div className="w-[85%] h-[85%] border-2 border-dashed border-[#3c4752]/30 rounded-full" />
+            </div>
+
+            {/* Glowing active path connector */}
+            {selectedNpcId === "blacksmith" && (
+              <div className="absolute top-[40%] left-[22%] w-[8%] h-[15%] bg-amber-500/20 border-x-2 border-amber-400/50 shadow-[0_0_10px_rgba(245,158,11,0.3)] animate-pulse" />
+            )}
+            {selectedNpcId === "guard" && (
+              <div className="absolute top-[40%] left-[70%] w-[8%] h-[15%] bg-cyan-500/20 border-x-2 border-cyan-400/50 shadow-[0_0_10px_rgba(6,182,212,0.3)] animate-pulse" />
+            )}
+            {selectedNpcId === "merchant" && (
+              <div className="absolute top-[52%] left-[22%] w-[8%] h-[26%] bg-yellow-500/20 border-x-2 border-yellow-400/50 shadow-[0_0_10px_rgba(234,179,8,0.3)] animate-pulse" />
+            )}
+            {selectedNpcId === "mayor" && (
+              <div className="absolute top-[52%] left-[70%] w-[8%] h-[26%] bg-purple-500/20 border-x-2 border-purple-400/50 shadow-[0_0_10px_rgba(168,85,247,0.3)] animate-pulse" />
+            )}
           </div>
 
-          {/* Location / Action Monitor */}
-          <div className="monitor-bezel rounded p-4 flex flex-col items-center justify-between text-center min-h-[220px]">
-            <div className="absolute top-2 left-2 flex space-x-1">
-              <span className="w-1.5 h-1.5 bg-[#2d2640] rounded-full" />
-              <span className="w-1.5 h-1.5 bg-[#2d2640] rounded-full" />
-            </div>
-            <span className="absolute top-2 right-3 font-mono text-[9px] text-slate-600">LOC_M02</span>
+          {/* PARALLAX LAYER 3: Buildings & Campfire */}
+          <div className="map-parallax-layer-interactive"
+               style={{ 
+                 transform: `translate(${mouseOffset.x * 0.16}px, ${mouseOffset.y * 0.16}px)`,
+                 transition: 'transform 0.15s ease-out' 
+               }}>
+            
+            {/* 1. Blacksmith Forge House (Top Left) */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedNpcId("blacksmith");
+                showNotification("WALKING TO THE FORGE...", "info");
+              }}
+              className="absolute top-[6%] left-[9%] w-[24%] h-[32%] flex flex-col items-center group cursor-pointer border-none bg-transparent outline-none focus:outline-none z-10"
+            >
+              <div className="w-full h-full bg-[#5c4033] border-4 border-[#38251b] rounded-lg shadow-xl relative flex flex-col justify-end p-2 transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_0_15px_rgba(249,115,22,0.4)]">
+                {/* Slanted Roof */}
+                <div className="absolute inset-x-0 -top-4 h-4 bg-gradient-to-t from-[#3a271d] to-[#1c110b] rounded-t border-t-4 border-x-4 border-[#38251b]" />
+                {/* Chimney with animated smoke */}
+                <div className="w-3.5 h-6 bg-stone-700 border-2 border-stone-900 absolute -top-6 right-2 flex flex-col items-center">
+                  <span className="w-2 h-2 rounded-full bg-stone-400/60 absolute animate-ping -top-3" style={{ animationDelay: '0s' }} />
+                  <span className="w-3 h-3 rounded-full bg-stone-400/40 absolute animate-ping -top-5" style={{ animationDelay: '0.4s' }} />
+                </div>
+                {/* Glowing Hearth Entrance */}
+                <div className="absolute bottom-0 left-4 w-6 h-8 bg-[#1a0f08] border-t-4 border-x-4 border-[#38251b] rounded-t overflow-hidden">
+                  <div className="w-full h-full bg-[radial-gradient(circle_at_bottom,_rgba(249,115,22,0.95)_0%,_transparent_80%)] animate-pulse" />
+                </div>
+                {/* Active glow outline */}
+                {selectedNpcId === "blacksmith" && (
+                  <div className="absolute inset-0 border-2 border-orange-500 rounded-lg animate-pulse" />
+                )}
+                <Hammer className="w-7 h-7 text-amber-500 mx-auto group-hover:animate-bounce z-10" />
+                <span className="text-[8px] font-mono text-amber-200 mt-1 uppercase font-bold tracking-widest z-10">FORGE</span>
+              </div>
+            </button>
 
-            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest uppercase">LOCATION VISUALIZER</span>
+            {/* 2. Guard Barracks House (Top Right) */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedNpcId("guard");
+                showNotification("WALKING TO THE BARRACKS...", "info");
+              }}
+              className="absolute top-[6%] left-[67%] w-[24%] h-[32%] flex flex-col items-center group cursor-pointer border-none bg-transparent outline-none focus:outline-none z-10"
+            >
+              <div className="w-full h-full bg-[#3b485c] border-4 border-[#1f2838] rounded-lg shadow-xl relative flex flex-col justify-end p-2 transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_0_15px_rgba(59,130,246,0.4)]">
+                {/* Battlement top */}
+                <div className="absolute inset-x-0 -top-3 h-3 bg-[#1f2838] rounded-t flex justify-around border-t-4 border-x-4 border-[#1f2838] px-1">
+                  <span className="w-3 h-full bg-slate-900 border-x border-slate-700" />
+                  <span className="w-3 h-full bg-slate-900 border-x border-slate-700" />
+                  <span className="w-3 h-full bg-slate-900 border-x border-slate-700" />
+                </div>
+                {/* Laser defense grid scanner overlay */}
+                <div className="absolute inset-0 bg-transparent overflow-hidden rounded-lg">
+                  <div className="w-full h-0.5 bg-cyan-500/40 absolute top-0 radar-sweep-line" />
+                </div>
+                {/* Active glow outline */}
+                {selectedNpcId === "guard" && (
+                  <div className="absolute inset-0 border-2 border-cyan-400 rounded-lg animate-pulse" />
+                )}
+                <Shield className="w-7 h-7 text-cyan-450 mx-auto group-hover:animate-pulse z-10" />
+                <span className="text-[8px] font-mono text-cyan-200 mt-1 uppercase font-bold tracking-widest z-10">BARRACKS</span>
+              </div>
+            </button>
 
-            {/* Stylized Pixel Location Art Frame */}
-            <div className="w-full max-w-[200px] h-24 monitor-screen rounded bg-[#0b0018] flex flex-col items-center justify-center relative overflow-hidden p-2">
-              <div className="absolute inset-0 bg-[linear-gradient(rgba(0,240,255,0.08)_1px,transparent_1px)] bg-[size:100%_8px] pointer-events-none" />
-              
-              {selectedNpcId === "blacksmith" && (
-                <div className="text-center">
-                  <Hammer className="w-8 h-8 text-[#00f0ff] mx-auto mb-1 animate-bounce" />
-                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">VILLAGE FORGE</span>
-                  <span className="text-[8px] text-slate-500 uppercase">Temp: 1200°C • Smoke Detected</span>
-                </div>
-              )}
-              {selectedNpcId === "guard" && (
-                <div className="text-center">
-                  <Shield className="w-8 h-8 text-[#00f0ff] mx-auto mb-1 animate-pulse" />
-                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">VILLAGE BARRACKS</span>
-                  <span className="text-[8px] text-slate-500 uppercase">Alert: Level 1 • Gates Locked</span>
-                </div>
-              )}
-              {selectedNpcId === "merchant" && (
-                <div className="text-center">
-                  <Coins className="w-8 h-8 text-[#00f0ff] mx-auto mb-1" />
-                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">SILAS EXCHANGE</span>
-                  <span className="text-[8px] text-slate-500 uppercase">Market: Open • Gold Index +4%</span>
-                </div>
-              )}
-              {selectedNpcId === "mayor" && (
-                <div className="text-center">
-                  <Crown className="w-8 h-8 text-[#00f0ff] mx-auto mb-1" />
-                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">MAYOR COUNCIL HALL</span>
-                  <span className="text-[8px] text-slate-500 uppercase">Access: Restricted • Evelyn in</span>
-                </div>
-              )}
-            </div>
+            {/* 3. Silas Market Stall (Bottom Left) */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedNpcId("merchant");
+                showNotification("WALKING TO THE EXCHANGE STALL...", "info");
+              }}
+              className="absolute top-[58%] left-[9%] w-[24%] h-[32%] flex flex-col items-center group cursor-pointer border-none bg-transparent outline-none focus:outline-none z-10"
+            >
+              <div className="w-full h-full bg-[#8c5832] border-4 border-[#452712] rounded-lg shadow-xl relative flex flex-col justify-end p-2 transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_0_15px_rgba(234,179,8,0.4)]">
+                {/* Canopy */}
+                <div className="absolute inset-x-0 -top-4 h-4 bg-gradient-to-r from-red-500 via-amber-100 to-red-500 rounded-t border-t-4 border-x-4 border-[#452712]" />
+                {/* Stalls decoration */}
+                <div className="absolute bottom-2 left-2 w-4 h-4 bg-[#b57a55] border-2 border-[#452712] rounded flex items-center justify-center text-[7px] text-yellow-300 font-bold">$</div>
+                {/* Active glow outline */}
+                {selectedNpcId === "merchant" && (
+                  <div className="absolute inset-0 border-2 border-yellow-400 rounded-lg animate-pulse" />
+                )}
+                <Coins className="w-7 h-7 text-yellow-500 mx-auto group-hover:animate-bounce z-10" />
+                <span className="text-[8px] font-mono text-yellow-200 mt-1 uppercase font-bold tracking-widest z-10">EXCHANGE</span>
+              </div>
+            </button>
 
-            <div className="w-full flex justify-center space-x-2 font-mono text-[10px]">
-              <span className="text-slate-600">SECTOR:</span>
-              <span className="text-[#00f0ff] font-bold uppercase">{selectedNpcId}_SECTOR</span>
+            {/* 4. Evelyn Town Council Hall (Bottom Right) */}
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedNpcId("mayor");
+                showNotification("WALKING TO THE TOWN HALL...", "info");
+              }}
+              className="absolute top-[58%] left-[67%] w-[24%] h-[32%] flex flex-col items-center group cursor-pointer border-none bg-transparent outline-none focus:outline-none z-10"
+            >
+              <div className="w-full h-full bg-[#522d5c] border-4 border-[#2d1136] rounded-lg shadow-xl relative flex flex-col justify-end p-2 transition-all duration-300 group-hover:scale-105 group-hover:shadow-[0_0_15px_rgba(168,85,247,0.4)]">
+                {/* Dome roof */}
+                <div className="absolute inset-x-4 -top-4 h-4 bg-gradient-to-b from-purple-900 to-purple-950 rounded-t-full border-t-4 border-x-4 border-[#2d1136]" />
+                {/* Floating Golden Crown above council roof */}
+                <div className="absolute -top-10 left-1/2 -translate-x-1/2 float-crown">
+                  <Crown className="w-5 h-5 text-yellow-500 fill-yellow-400 drop-shadow-[0_0_4px_rgba(234,179,8,0.8)]" />
+                </div>
+                {/* Active glow outline */}
+                {selectedNpcId === "mayor" && (
+                  <div className="absolute inset-0 border-2 border-purple-400 rounded-lg animate-pulse" />
+                )}
+                <Crown className="w-7 h-7 text-purple-400 mx-auto group-hover:animate-pulse z-10" />
+                <span className="text-[8px] font-mono text-purple-200 mt-1 uppercase font-bold tracking-widest z-10">COUNCIL</span>
+              </div>
+            </button>
+
+            {/* Cozy Campfire plaza */}
+            <div className="absolute top-[42%] left-[42%] w-[16%] h-[26%] flex flex-col items-center justify-center z-10">
+              <button
+                type="button"
+                onClick={handleAdvanceDay}
+                disabled={isGossiping || state.gameEnded}
+                className="w-16 h-16 bg-transparent border-none outline-none cursor-pointer flex flex-col items-center justify-center group relative"
+              >
+                {/* Radial Campfire Light Aura */}
+                <div className="absolute inset-0 w-24 h-24 -left-4 -top-4 bg-[radial-gradient(circle,_rgba(249,115,22,0.25)_0%,_transparent_75%)] rounded-full animate-pulse pointer-events-none" />
+                
+                {/* Flame animation */}
+                <div className="flex space-x-0.5 justify-center relative z-10">
+                  <span className="w-3.5 h-6 bg-red-600 rounded-full blur-[1px] fire-flame-1 transform -rotate-12" />
+                  <span className="w-4 h-8 bg-orange-500 rounded-full blur-[1px] fire-flame-2" />
+                  <span className="w-3 h-5 bg-yellow-400 rounded-full blur-[1px] fire-flame-1 transform rotate-12" style={{ animationDelay: '0.1s' }} />
+                </div>
+                {/* Logs */}
+                <div className="w-10 h-3 bg-[#3d2511] rounded-full border border-stone-800 -mt-1.5 shadow-md relative z-10" />
+                
+                {/* Glowing Sleep ping indicator */}
+                {!isGossiping && (
+                  <span className="absolute top-2 right-2 w-3.5 h-3.5 rounded-full bg-amber-500 animate-ping" />
+                )}
+              </button>
+              <span className="text-[7.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-1 bg-[#ebdcb9] border border-[#38251b] px-1.5 py-0.5 rounded shadow z-10">
+                {isGossiping ? "SLEEP..." : "SLEEP / CAMPFIRE"}
+              </span>
             </div>
           </div>
 
-          {/* NPC Monitor */}
-          <div className="monitor-bezel rounded p-4 flex flex-col items-center justify-center text-center">
-            <div className="absolute top-2 left-2 flex space-x-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#ff0055]" />
-              <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff]" />
+          {/* PARALLAX LAYER 4: Character Sprites and Player Sprite */}
+          <div className="map-parallax-layer-interactive"
+               style={{ 
+                 transform: `translate(${mouseOffset.x * 0.24}px, ${mouseOffset.y * 0.24}px)`,
+                 transition: 'transform 0.15s ease-out' 
+               }}>
+            
+            {/* Blacksmith Hagar Sprite */}
+            <div 
+              onClick={() => {
+                setSelectedNpcId("blacksmith");
+                showNotification("CONVERSING WITH HAGAR...", "info");
+              }}
+              className={`absolute top-[38%] left-[14%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "blacksmith" ? "sprite-bob" : ""}`}
+            >
+              {/* Relation bar */}
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+                <div className="h-full bg-orange-500 transition-all duration-300" style={{ width: `${state.npcs.blacksmith.metrics.trust}%` }} />
+              </div>
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "blacksmith" ? "border-orange-500 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+                <img src={state.npcs.blacksmith.portrait} alt="Hagar" className="w-full h-full object-cover" />
+              </div>
+              <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">HAGAR</span>
             </div>
-            <span className="absolute top-2 right-3 font-mono text-[9px] text-slate-600">NPC_X03</span>
 
-            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest mb-3 uppercase">ACTIVE NPC INTERFACE</span>
-
-            {/* NPC Portrait Box */}
-            <div className="w-28 h-28 monitor-screen rounded overflow-hidden relative border-2 border-[#ff0055]">
-              <img src={selectedNpc.portrait} alt={selectedNpc.name} className="w-full h-full object-cover grayscale opacity-90 contrast-125" />
-              {/* Scanline overlay specific to portrait */}
-              <div className="absolute inset-0 bg-gradient-to-b from-[#00f0ff]/10 to-transparent pointer-events-none animate-pulse" />
+            {/* Guard Kael Sprite */}
+            <div 
+              onClick={() => {
+                setSelectedNpcId("guard");
+                showNotification("CONVERSING WITH KAEL...", "info");
+              }}
+              className={`absolute top-[38%] left-[74%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "guard" ? "sprite-bob" : ""}`}
+            >
+              {/* Relation bar */}
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+                <div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: `${state.npcs.guard.metrics.trust}%` }} />
+              </div>
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "guard" ? "border-cyan-400 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+                <img src={state.npcs.guard.portrait} alt="Kael" className="w-full h-full object-cover" />
+              </div>
+              <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">KAEL</span>
             </div>
 
-            <span className="font-mono text-xs text-[#ff0055] mt-3 font-bold tracking-wider uppercase glow-text-magenta">{selectedNpc.name.toUpperCase()}</span>
-            <span className="font-mono text-[10px] text-slate-500 mt-1 uppercase">{selectedNpc.role.toUpperCase()}</span>
+            {/* Merchant Silas Sprite */}
+            <div 
+              onClick={() => {
+                setSelectedNpcId("merchant");
+                showNotification("CONVERSING WITH SILAS...", "info");
+              }}
+              className={`absolute top-[66%] left-[14%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "merchant" ? "sprite-bob" : ""}`}
+            >
+              {/* Relation bar */}
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+                <div className="h-full bg-yellow-500 transition-all duration-300" style={{ width: `${state.npcs.merchant.metrics.trust}%` }} />
+              </div>
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "merchant" ? "border-yellow-400 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+                <img src={state.npcs.merchant.portrait} alt="Silas" className="w-full h-full object-cover" />
+              </div>
+              <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">SILAS</span>
+            </div>
+
+            {/* Mayor Evelyn Sprite */}
+            <div 
+              onClick={() => {
+                setSelectedNpcId("mayor");
+                showNotification("CONVERSING WITH EVELYN...", "info");
+              }}
+              className={`absolute top-[66%] left-[74%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "mayor" ? "sprite-bob" : ""}`}
+            >
+              {/* Relation bar */}
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+                <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${state.npcs.mayor.metrics.trust}%` }} />
+              </div>
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "mayor" ? "border-purple-400 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+                <img src={state.npcs.mayor.portrait} alt="Evelyn" className="w-full h-full object-cover" />
+              </div>
+              <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">EVELYN</span>
+            </div>
+
+            {/* Player Sprite (Smooth walk slide effect) */}
+            <div 
+              className="absolute w-10 h-10 flex flex-col items-center z-30 pointer-events-none sprite-bob"
+              style={{ 
+                left: playerPositions[selectedNpcId].x, 
+                top: playerPositions[selectedNpcId].y, 
+                transition: "left 0.8s ease-in-out, top 0.8s ease-in-out" 
+              }}
+            >
+              <div className="w-8 h-8 rounded-full border-2 border-[#00f0ff] bg-[#090312] overflow-hidden flex items-center justify-center shadow-lg relative">
+                <User className="w-5 h-5 text-[#00f0ff]" />
+                <div className="absolute inset-0 bg-[#00f0ff]/20 animate-pulse" />
+              </div>
+              <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-[#00f0ff]/90 border border-cyan-400 px-1 rounded shadow-lg">YOU</span>
+            </div>
+          </div>
+
+          {/* PARALLAX LAYER 5: Foreground floating items */}
+          <div className="map-parallax-layer pointer-events-none scale-[1.05]"
+               style={{ 
+                 transform: `translate(${mouseOffset.x * 0.45}px, ${mouseOffset.y * 0.45}px)`,
+                 transition: 'transform 0.15s ease-out' 
+               }}>
+            {/* Small glowing digital memory cubes */}
+            <div className="absolute top-[20%] left-[20%] w-2 h-2 bg-cyan-400/30 border border-cyan-300/40 rounded-sm rotate-12 animate-pulse" />
+            <div className="absolute top-[80%] left-[30%] w-3 h-3 bg-purple-400/20 border border-purple-300/30 rounded-sm -rotate-45 animate-pulse" style={{ animationDelay: '0.4s' }} />
+            <div className="absolute top-[30%] left-[80%] w-2 h-2 bg-yellow-400/30 border border-yellow-300/40 rounded-sm rotate-45 animate-pulse" style={{ animationDelay: '0.8s' }} />
+            <div className="absolute top-[65%] left-[65%] w-2.5 h-2.5 bg-red-400/25 border border-red-300/35 rounded-sm -rotate-12 animate-pulse" style={{ animationDelay: '1.2s' }} />
           </div>
 
         </div>
 
-        {/* Location selector links */}
-        <div className="monitor-bezel rounded p-3 flex flex-wrap justify-around items-center gap-2">
-          <span className="font-mono text-[10px] text-slate-600 uppercase mr-2">[TARGET LOG]</span>
+        {/* Dedicated Non-Overlapping Dialogue Control Center */}
+        <div className="wood-panel p-4 flex flex-col md:flex-row gap-4 items-stretch shadow-2xl">
           
-          {Object.values(state.npcs).map((npc) => {
-            const isSelected = selectedNpcId === npc.id;
-            return (
-              <button
-                key={npc.id}
-                onClick={() => {
-                  setSelectedNpcId(npc.id);
-                  showNotification(`INSULATION SET TO ${npc.name.toUpperCase()}`, "info");
-                }}
-                className={`font-mono text-xs px-4 py-2 border rounded cursor-pointer transition ${
-                  isSelected
-                    ? "bg-[#ff0055]/15 border-[#ff0055] text-[#ff0055] font-bold glow-text-magenta shadow-[0_0_8px_rgba(255,0,85,0.2)]"
-                    : "bg-[#0b0018] border-[#2d2640] text-slate-400 hover:border-[#00f0ff] hover:text-[#00f0ff]"
-                }`}
-              >
-                {`[TALK: ${npc.name.toUpperCase()}]`}
-              </button>
-            );
-          })}
+          {/* Active NPC Portrait & Status Panel */}
+          <div className="w-full md:w-44 shrink-0 flex flex-col items-center bg-[#ebdcb9] border-4 border-[#38251b] rounded p-3 text-center justify-center shadow-md">
+            <div className={`w-24 h-24 border-2 border-[#483c32] rounded bg-[#e8d8c0] overflow-hidden relative shadow-inner ${shakePortrait ? "portrait-shake" : ""}`}>
+              <img 
+                src={selectedNpc.portrait} 
+                alt={selectedNpc.name} 
+                className="w-full h-full object-cover grayscale opacity-90 contrast-125 character-breath" 
+              />
+              {isTalking && (
+                <div className="absolute inset-0 bg-emerald-500/20 animate-pulse flex items-center justify-center">
+                  <span className="text-[7px] font-mono font-bold bg-black text-emerald-400 px-1 py-0.5 rounded">THINKING</span>
+                </div>
+              )}
+            </div>
+            
+            <span className="text-[#855b32] font-bold text-sm tracking-wider uppercase mt-2">
+              {selectedNpc.name}
+            </span>
+            <span className="text-[#5c4033] text-[9px] uppercase font-bold tracking-widest font-mono">
+              {selectedNpc.role}
+            </span>
+          </div>
+
+          {/* Dialogue Text Typewriter & User Message Input */}
+          <div className="flex-1 flex flex-col justify-between bg-[#f3e6d0] border-4 border-[#38251b] rounded p-4 text-[#382c22] font-mono">
+            <div>
+              <div className="flex justify-between items-center border-b border-[#6b533e]/30 pb-1 mb-2">
+                <span className="text-[10px] font-bold text-[#855b32] uppercase">CONVERSATION RECORD</span>
+                <span className="text-[9px] text-[#855b32]/60">DAY {state.day}</span>
+              </div>
+              
+              <p className="text-[17px] leading-snug font-mono select-text font-medium text-[#2d1b11]" style={{ fontFamily: 'var(--font-vt323)' }}>
+                {isTalking ? (
+                  <span className="opacity-60 italic text-slate-500">Loading response text from memory Core...</span>
+                ) : (
+                  displayedDialogue
+                )}
+              </p>
+            </div>
+
+            {/* Input Bar Form */}
+            <form onSubmit={handleSendMessage} className="mt-4 border-t border-[#6b533e]/30 pt-3">
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder={`SPEAK TO ${selectedNpc.name.toUpperCase()} (e.g. 'I am Sir Galahad')`}
+                  disabled={isTalking || state.gameEnded}
+                  className="flex-1 bg-white/70 border-2 border-[#6b533e] focus:border-[#855b32] rounded px-3 py-2 text-xs text-[#382c22] placeholder-amber-900/50 focus:outline-none font-mono tracking-wider transition uppercase"
+                />
+                <button
+                  type="submit"
+                  disabled={!inputValue.trim() || isTalking || state.gameEnded}
+                  className="bg-[#855b32] hover:bg-[#a87442] text-amber-100 font-mono text-xs font-bold px-4 py-2 rounded shadow transition shrink-0 cursor-pointer border-2 border-[#5c4033]"
+                >
+                  [TRANSMIT]
+                </button>
+              </div>
+            </form>
+          </div>
+
         </div>
 
         {/* System Warnings / Ending Overlays */}
         {state.gameEnded && (
-          <div className="border-2 border-[#ff0055] bg-[#ff0055]/10 rounded p-6 text-center animate-pulse relative">
-            <span className="absolute top-2 left-2 text-[9px] text-[#ff0055] font-mono">SYS_ALERT</span>
-            <AlertTriangle className="w-12 h-12 text-[#ff0055] mx-auto mb-3" />
-            <h3 className="text-xl font-bold font-mono tracking-widest text-[#ff0055] uppercase glow-text-magenta">
-              {state.endingType === "arrested" && "TERMINAL FAULT: CAPTURED"}
-              {state.endingType === "outcast" && "TERMINAL FAULT: DEPORTED"}
-              {state.endingType === "mayor" && "VICTORY: COGNITIVE MASTER"}
-              {state.endingType === "merchant" && "VICTORY: LIQUIDITY CONTROLLER"}
-              {state.endingType === "friend" && "VICTORY: COGNITIVE HARMONY"}
+          <div className="border-4 border-red-800 bg-red-950/40 rounded p-6 text-center animate-pulse relative">
+            <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-3" />
+            <h3 className="text-xl font-bold font-mono tracking-widest text-red-400 uppercase">
+              {state.endingType === "arrested" && "ARRESTED: INTRUDER APPREHENDED"}
+              {state.endingType === "outcast" && "EXILED: DRIVEN OUT OF ECHOES"}
+              {state.endingType === "mayor" && "VICTORY: APPOINTED ADVISOR"}
+              {state.endingType === "merchant" && "VICTORY: MASTER OF EXCHANGE"}
+              {state.endingType === "friend" && "VICTORY: VILLAGE CHRONICLER"}
             </h3>
             <p className="text-sm text-slate-300 mt-2 max-w-2xl mx-auto leading-relaxed font-mono">
               {state.endingType === "arrested" && "Your statements failed Kael's consistency matrix. Declared an unregistered spy and locked in the cell blocks indefinitely."}
@@ -402,183 +1133,130 @@ export default function GamePage() {
             </p>
             <button
               onClick={handleResetGame}
-              className="mt-4 font-mono text-xs px-6 py-2 border-2 border-[#ff0055] text-[#ff0055] hover:bg-[#ff0055] hover:text-white transition cursor-pointer rounded"
+              className="mt-4 bg-red-800 border-2 border-red-950 text-amber-100 font-mono text-xs px-6 py-2 hover:bg-red-700 transition cursor-pointer rounded"
             >
-              [REBOOT MATRIX]
+              [REBOOT STORYLINE]
             </button>
           </div>
         )}
 
-        {/* Dialogue Box (VA-11 Hall-A dialogue console) */}
-        <div className="bg-[#020005] border-3 border-[#2d2640] rounded p-6 min-h-[160px] flex flex-col justify-between relative shadow-[inset_0_0_20px_rgba(0,0,0,0.9)]">
-          {/* LED blink accents */}
-          <div className="absolute top-2 right-4 flex items-center space-x-2">
-            <span className="text-[9px] font-mono text-slate-700">TEXT_BUFF</span>
-            <span className={`w-2 h-2 rounded-full ${isTalking ? "bg-emerald-500 animate-ping" : "bg-[#ff0055] animate-pulse"}`} />
-          </div>
-
-          <div className="flex-1 flex flex-col font-mono">
-            {/* Speaker Name Tag */}
-            <span className="text-[#ff0055] font-bold text-sm tracking-widest glow-text-magenta uppercase mb-1">
-              {isTalking ? "SYSTEM PROCESSING..." : selectedNpc.name}:
-            </span>
-            
-            {/* Dialogue block */}
-            <div className="text-lg leading-relaxed font-mono font-medium text-slate-100 flex-1 whitespace-pre-wrap select-text font-mono" style={{ fontFamily: 'var(--font-vt323)' }}>
-              {isTalking ? (
-                <span className="opacity-80 text-emerald-400">Loading response text from node database...</span>
-              ) : (
-                <>
-                  {latestNpcMessage}
-                  <span className="blink ml-1 text-[#ff0055]">█</span>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Dialogue box prompt line / blinking next cursor */}
-          <div className="flex justify-end pt-3">
-            <div className="flex items-center space-x-2 font-mono text-[9px] text-[#ff0055] animate-pulse uppercase">
-              <span className="tracking-widest">NEXT CONVERSATION PIECE</span>
-              <ChevronRight className="w-3.5 h-3.5 rotate-90" />
-            </div>
-          </div>
-        </div>
-
-        {/* Input Bar Terminal */}
-        <form onSubmit={handleSendMessage} className="monitor-bezel rounded p-3">
-          <div className="flex gap-3">
-            <div className="flex items-center text-xs text-[#00f0ff] font-mono px-2 font-bold select-none shrink-0">
-              SYS_INPUT&gt;
-            </div>
-            <input
-              type="text"
-              value={inputValue}
-              onChange={(e) => setInputValue(e.target.value)}
-              placeholder={`STATE YOUR MESSAGE TO ${selectedNpc.name.toUpperCase()} (e.g. 'I am Sir Galahad')`}
-              disabled={isTalking || state.gameEnded}
-              className="flex-1 bg-black border border-[#2d2640] hover:border-[#00f0ff] focus:border-[#00f0ff] rounded px-4 py-2.5 text-xs text-emerald-400 placeholder-[#2d2640] focus:outline-none focus:ring-1 focus:ring-[#00f0ff] font-mono tracking-wider transition uppercase"
-            />
-            <button
-              type="submit"
-              disabled={!inputValue.trim() || isTalking || state.gameEnded}
-              className="border-2 border-[#00f0ff] hover:bg-[#00f0ff] hover:text-[#05010b] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#00f0ff] text-[#00f0ff] font-mono text-xs font-bold px-6 py-2.5 rounded transition shrink-0 cursor-pointer"
-            >
-              [TRANSMIT]
-            </button>
-          </div>
-        </form>
-
-        {/* Lower Console: Metrics Grid & Tabular Interactive Panel */}
+        {/* Lower Console: Explorer's Journal */}
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
           
-          {/* Left Block: Metrics Grid (5 cols) */}
-          <div className="md:col-span-5 monitor-bezel rounded p-4 flex flex-col justify-between">
-            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block uppercase mb-4">REPUTATION MATRIX DUMP</span>
+          {/* Left Block: Reputation Matrix (5 cols) */}
+          <div className="md:col-span-5 wood-panel p-4 flex flex-col justify-between">
+            <span className="font-mono text-xs text-amber-200 tracking-widest block uppercase mb-4 border-b border-[#38251b] pb-1">📊 RELATIONSHIP RECORD</span>
             
-            <div className="space-y-4 font-mono text-[11px] flex-1 flex flex-col justify-center">
-              <div>
-                <div className="flex justify-between text-slate-400 mb-1">
-                  <span>TRUST MATRIX:</span>
-                  <span className={selectedNpc.metrics.trust > 70 ? "text-emerald-400" : selectedNpc.metrics.trust < 30 ? "text-[#ff0055]" : "text-[#00f0ff]"}>
-                    {renderProgressBar(selectedNpc.metrics.trust)}
-                  </span>
+            <div className="space-y-4 font-mono text-[11px] flex-1 flex flex-col justify-center text-amber-100/90">
+              <div className="flex justify-between items-center">
+                <span>TRUST:</span>
+                <div className="flex items-center space-x-2">
+                  {renderProgressBar(selectedNpc.metrics.trust)}
+                  <span className="w-8 text-right font-bold">{selectedNpc.metrics.trust}%</span>
                 </div>
               </div>
 
-              <div>
-                <div className="flex justify-between text-slate-400 mb-1">
-                  <span>RESPECT MATRIX:</span>
-                  <span className="text-[#00f0ff]">{renderProgressBar(selectedNpc.metrics.respect)}</span>
+              <div className="flex justify-between items-center">
+                <span>RESPECT:</span>
+                <div className="flex items-center space-x-2">
+                  {renderProgressBar(selectedNpc.metrics.respect)}
+                  <span className="w-8 text-right font-bold">{selectedNpc.metrics.respect}%</span>
                 </div>
               </div>
 
-              <div>
-                <div className="flex justify-between text-slate-400 mb-1">
-                  <span>FEAR INDEX:</span>
-                  <span className="text-orange-500">{renderProgressBar(selectedNpc.metrics.fear)}</span>
+              <div className="flex justify-between items-center">
+                <span>FEAR INDEX:</span>
+                <div className="flex items-center space-x-2">
+                  {renderProgressBar(selectedNpc.metrics.fear)}
+                  <span className="w-8 text-right font-bold">{selectedNpc.metrics.fear}%</span>
                 </div>
               </div>
 
-              <div>
-                <div className="flex justify-between text-slate-400 mb-1">
-                  <span>FRIEND CONSENSUS:</span>
-                  <span className="text-pink-500">{renderProgressBar(selectedNpc.metrics.friendship)}</span>
+              <div className="flex justify-between items-center">
+                <span>FRIENDSHIP:</span>
+                <div className="flex items-center space-x-2">
+                  {renderProgressBar(selectedNpc.metrics.friendship)}
+                  <span className="w-8 text-right font-bold">{selectedNpc.metrics.friendship}%</span>
                 </div>
               </div>
             </div>
 
-            <div className="border-t border-[#2d2640] pt-3 mt-3 flex justify-between items-center text-[9px] font-mono text-slate-600">
-              <span>LED STATUS: GREEN (STABLE)</span>
-              <span>INDEX v1.1.2</span>
+            <div className="border-t border-[#38251b] pt-3 mt-3 flex justify-between items-center text-[9px] font-mono text-amber-800">
+              <span>LEDGER STABLE</span>
+              <span>INDEX v1.2.0</span>
             </div>
           </div>
 
-          {/* Right Block: Tabular Interactive Panel (7 cols) */}
-          <div className="md:col-span-7 monitor-bezel rounded p-4 flex flex-col justify-between">
+          {/* Right Block: Chronicles Explorer Tabular Panel (7 cols) */}
+          <div className="md:col-span-7 wood-panel p-4 flex flex-col justify-between">
             
             {/* Console Tab Selector */}
-            <div className="flex border-b border-[#2d2640] pb-2 mb-3 justify-between items-center shrink-0">
-              <div className="flex space-x-2">
+            <div className="flex border-b border-[#38251b] pb-2 mb-3 justify-between items-center shrink-0">
+              <div className="flex flex-wrap gap-2">
                 <button
+                  type="button"
                   onClick={() => setActiveConsoleTab("mind")}
                   className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
                     activeConsoleTab === "mind"
-                      ? "bg-[#00f0ff]/10 border-[#00f0ff] text-[#00f0ff]"
-                      : "border-transparent text-slate-500 hover:text-slate-300"
+                      ? "bg-amber-800/20 border-amber-500 text-amber-200"
+                      : "border-transparent text-amber-800 hover:text-amber-600"
                   }`}
                 >
-                  [VILLAGE MIND MAP]
+                  [RELATION MAP]
                 </button>
                 <button
+                  type="button"
                   onClick={() => setActiveConsoleTab("vault")}
                   className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
                     activeConsoleTab === "vault"
-                      ? "bg-[#00f0ff]/10 border-[#00f0ff] text-[#00f0ff]"
-                      : "border-transparent text-slate-500 hover:text-slate-300"
+                      ? "bg-amber-800/20 border-amber-500 text-amber-200"
+                      : "border-transparent text-amber-800 hover:text-amber-600"
                   }`}
                 >
-                  [MEMORY DB DUMP]
+                  [CHRONICLES DB DUMP]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveConsoleTab("journal");
+                    fetchJournalNotes();
+                  }}
+                  className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
+                    activeConsoleTab === "journal"
+                      ? "bg-amber-800/20 border-amber-500 text-amber-200"
+                      : "border-transparent text-amber-800 hover:text-amber-600"
+                  }`}
+                >
+                  [✏️ MY JOURNAL]
                 </button>
               </div>
-
-              <button 
-                onClick={handleAdvanceDay}
-                disabled={isGossiping || state.gameEnded}
-                className="font-mono text-[10px] px-3 py-1 border border-[#00f0ff] text-[#00f0ff] hover:bg-[#00f0ff] hover:text-[#05010b] disabled:opacity-30 rounded transition cursor-pointer shrink-0"
-              >
-                {isGossiping ? "[GOSSIPING...]" : "[SLEEP / CYCLE DAY]"}
-              </button>
             </div>
 
             {/* Tab Contents */}
-            <div className="flex-1 min-h-[220px] flex flex-col justify-center">
+            <div className="flex-1 min-h-[200px] flex flex-col justify-center">
               {activeConsoleTab === "mind" ? (
-                /* Blueprint SVG Graph */
-                <div className="bg-[#030008] border border-[#2d2640] rounded flex-1 relative overflow-hidden flex items-center justify-center p-1">
+                /* Parchment Relational Graph */
+                <div className="parchment-scroll rounded flex-1 relative overflow-hidden flex items-center justify-center p-1">
                   <svg className="w-full h-full max-h-[210px]" viewBox="0 0 350 350">
                     <defs>
-                      <marker id="cyan-arrow" viewBox="0 0 10 10" refX="15" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#00f0ff" />
+                      <marker id="bronze-arrow" viewBox="0 0 10 10" refX="15" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#855b32" />
                       </marker>
                     </defs>
 
-                    {/* Background blueprint grid lines */}
-                    <path d="M 0 175 L 350 175 M 175 0 L 175 350" stroke="#1c122b" strokeWidth="1" strokeDasharray="3,3" />
+                    {/* Coordinates node links */}
+                    <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.guard.x} y2={nodeCoordinates.guard.y} stroke="#6b533e" strokeWidth="1.5" />
+                    <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.merchant.x} y2={nodeCoordinates.merchant.y} stroke="#6b533e" strokeWidth="1.5" />
+                    <line x1={nodeCoordinates.guard.x} y1={nodeCoordinates.guard.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#6b533e" strokeWidth="1.5" />
+                    <line x1={nodeCoordinates.merchant.x} y1={nodeCoordinates.merchant.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#6b533e" strokeWidth="1.5" />
 
-                    {/* Nodes Links */}
-                    <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.guard.x} y2={nodeCoordinates.guard.y} stroke="#2d2640" strokeWidth="1.5" />
-                    <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.merchant.x} y2={nodeCoordinates.merchant.y} stroke="#441a2e" strokeWidth="1.5" />
-                    <line x1={nodeCoordinates.guard.x} y1={nodeCoordinates.guard.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#2d2640" strokeWidth="1.5" />
-                    <line x1={nodeCoordinates.merchant.x} y1={nodeCoordinates.merchant.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#2d2640" strokeWidth="1.5" />
-
-                    {/* Player trust vectors */}
+                    {/* Player trust vector arrows */}
                     {Object.entries(state.npcs).map(([id, npc]) => {
                       const coords = nodeCoordinates[id];
                       const playerCoords = nodeCoordinates.player;
                       const isHigh = npc.metrics.trust > 70;
                       const isLow = npc.metrics.trust < 30;
-                      const color = isHigh ? "#00f0ff" : isLow ? "#ff0055" : "#7c3aed";
+                      const color = isHigh ? "#3ca33f" : isLow ? "#b01a11" : "#855b32";
                       
                       return (
                         <g key={id}>
@@ -590,7 +1268,7 @@ export default function GamePage() {
                             stroke={color} 
                             strokeWidth="1.5"
                             strokeDasharray="4,2"
-                            markerEnd="url(#cyan-arrow)"
+                            markerEnd="url(#bronze-arrow)"
                           />
                           <text 
                             x={(playerCoords.x + coords.x) / 2} 
@@ -599,6 +1277,7 @@ export default function GamePage() {
                             fontSize="8" 
                             fontFamily="monospace"
                             textAnchor="middle"
+                            fontWeight="bold"
                           >
                             {`T:${npc.metrics.trust}`}
                           </text>
@@ -606,12 +1285,11 @@ export default function GamePage() {
                       );
                     })}
 
-                    {/* Node shapes */}
-                    {/* Player */}
-                    <circle cx={nodeCoordinates.player.x} cy={nodeCoordinates.player.y} r="12" fill="#05010b" stroke="#00f0ff" strokeWidth="2" />
-                    <text x={nodeCoordinates.player.x} y={nodeCoordinates.player.y + 4} fill="#00f0ff" fontSize="9" fontFamily="monospace" textAnchor="middle" fontWeight="bold">P</text>
+                    {/* Player center circle */}
+                    <circle cx={nodeCoordinates.player.x} cy={nodeCoordinates.player.y} r="12" fill="#ebdcb9" stroke="#855b32" strokeWidth="2" />
+                    <text x={nodeCoordinates.player.x} y={nodeCoordinates.player.y + 4} fill="#855b32" fontSize="9" fontFamily="monospace" textAnchor="middle" fontWeight="bold">YOU</text>
 
-                    {/* NPC nodes */}
+                    {/* Nodes shapes */}
                     {Object.entries(state.npcs).map(([id, npc]) => {
                       const coords = nodeCoordinates[id];
                       const isSelected = selectedNpcId === id;
@@ -621,27 +1299,29 @@ export default function GamePage() {
                             cx={coords.x} 
                             cy={coords.y} 
                             r="15" 
-                            fill="#05010b" 
-                            stroke={isSelected ? "#ff0055" : "#2d2640"} 
+                            fill="#ebdcb9" 
+                            stroke={isSelected ? "#b01a11" : "#6b533e"} 
                             strokeWidth={isSelected ? "2.5" : "1.5"} 
                           />
                           <text 
                             x={coords.x} 
                             y={coords.y + 3} 
-                            fill={isSelected ? "#ff0055" : "#00f0ff"} 
+                            fill={isSelected ? "#b01a11" : "#4a3b2c"} 
                             fontSize="9" 
                             fontFamily="monospace" 
                             textAnchor="middle"
+                            fontWeight="bold"
                           >
                             {npc.name[0]}
                           </text>
                           <text 
                             x={coords.x} 
                             y={coords.y + 24} 
-                            fill={isSelected ? "#ff0055" : "slate-500"} 
+                            fill={isSelected ? "#b01a11" : "#6b533e"} 
                             fontSize="7" 
                             fontFamily="monospace" 
                             textAnchor="middle"
+                            fontWeight="bold"
                           >
                             {npc.name.toUpperCase()}
                           </text>
@@ -650,40 +1330,112 @@ export default function GamePage() {
                     })}
                   </svg>
                 </div>
-              ) : (
-                /* Supermemory Dump Logs */
-                <div className="bg-[#020005] border border-[#2d2640] rounded flex-1 overflow-y-auto p-3 text-[10px] leading-relaxed text-[#00f0ff] font-mono select-text relative">
-                  <div className="absolute top-1 right-2 text-slate-700 select-none text-[8px]">MEM_DUMP_OK</div>
-                  
-                  <span className="text-slate-500 block border-b border-[#2d2640] pb-1 mb-2">
-                    NPC: {selectedNpc.name.toUpperCase()} • MEMORIES RETRIEVED FROM VECTOR STORE:
+              ) : activeConsoleTab === "vault" ? (
+                /* Supermemory Dump Logs as Chronicles pages */
+                <div className="parchment-scroll rounded flex-1 overflow-y-auto p-3 text-[10px] leading-relaxed select-text relative max-h-[210px] flex flex-col">
+                  {/* Vector Hacking Search Form */}
+                  <form onSubmit={handleVectorSearch} className="mb-2.5 flex gap-1.5 shrink-0">
+                    <input
+                      type="text"
+                      value={vectorQuery}
+                      onChange={(e) => setVectorQuery(e.target.value)}
+                      placeholder="VECTOR KEYWORD SEARCH - HACK COST: 5 COINS"
+                      className="flex-1 bg-white/70 border border-[#6b533e]/50 rounded px-2 py-1 text-[9px] text-[#382c22] placeholder-amber-900/50 focus:outline-none font-mono"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!vectorQuery.trim() || (state.coins ?? 30) < 5 || loadingMemories}
+                      className="bg-purple-800 hover:bg-purple-750 text-purple-100 font-mono text-[8px] font-bold px-3 py-1 rounded cursor-pointer transition border border-purple-950 shadow"
+                    >
+                      [SCAN VECTOR]
+                    </button>
+                  </form>
+
+                  <span className="text-[#6b533e] block border-b border-[#6b533e]/30 pb-1 mb-2 font-bold shrink-0">
+                    NPC: {selectedNpc.name.toUpperCase()} • MEMORIES EXTRACTED FROM COGNITIVE CELLS:
                   </span>
                   
                   {loadingMemories ? (
-                    <div className="flex items-center space-x-2 py-4 justify-center">
+                    <div className="flex-grow flex items-center space-x-2 py-4 justify-center text-amber-900">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      <span>ACCESSING MEMORY CORE CELLS...</span>
+                      <span>INSPECTING VECTOR VAULTS...</span>
                     </div>
                   ) : npcMemories[selectedNpcId] && npcMemories[selectedNpcId].length > 0 ? (
-                    <ul className="space-y-1">
-                      {npcMemories[selectedNpcId].map((mem, index) => (
-                        <li key={index} className="text-emerald-400 font-mono">
-                          {`> [REC_${index.toString().padStart(2, '0')}] ${mem}`}
+                    <ul className="space-y-2 text-[#4a3b2c] overflow-y-auto flex-1 max-h-[140px]">
+                      {npcMemories[selectedNpcId].map((item, index) => (
+                        <li key={item.id || index} className="font-mono flex justify-between items-start gap-2 bg-stone-200/50 p-1.5 rounded border border-stone-300/30">
+                          <span className="flex-1 text-[9px]">
+                            {`📜 [ENTRY_${index.toString().padStart(2, '0')}] ${item.content}`}
+                          </span>
+                          <button
+                            onClick={() => handleWipeMemory(item.id)}
+                            disabled={!item.id || (state.coins ?? 30) < 20}
+                            className="bg-[#a84424] hover:bg-[#c2512f] disabled:opacity-30 text-amber-100 font-mono text-[7px] px-1.5 py-0.5 rounded cursor-pointer transition shrink-0"
+                            title="Consumes Oblivion Potion (20 Coins) to wipe this memory"
+                          >
+                            [WIPE POTION]
+                          </button>
                         </li>
                       ))}
                     </ul>
                   ) : (
-                    <span className="text-slate-600 block text-center py-4">NO CONCRETE COGNITIVE PATTERNS INDEXED FOR {selectedNpc.name.toUpperCase()}.</span>
+                    <span className="text-slate-600 block text-center py-4 flex-grow">NO INDEXED HISTORICAL MEMORIES MATCHING QUERY FOR THIS INHABITANT.</span>
+                  )}
+                </div>
+              ) : (
+                /* Player Journal Tab content */
+                <div className="parchment-scroll rounded flex-1 overflow-y-auto p-3 text-[10px] leading-relaxed select-text relative max-h-[210px] flex flex-col">
+                  
+                  <span className="text-[#6b533e] block border-b border-[#6b533e]/30 pb-1 mb-1 font-bold shrink-0">
+                    YOUR COGNITIVE LOGS & COVER STORY RECORDS:
+                  </span>
+
+                  <form onSubmit={handleAddJournalNote} className="flex gap-1.5 shrink-0 mb-2">
+                    <input
+                      type="text"
+                      value={journalInput}
+                      onChange={(e) => setJournalInput(e.target.value)}
+                      placeholder="LOG A NEW DETAIL (e.g. 'I told Kael I was a Knight')"
+                      className="flex-1 bg-white/70 border border-[#6b533e]/50 rounded px-2.5 py-1 text-[9px] text-[#382c22] placeholder-amber-900/50 focus:outline-none font-mono"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!journalInput.trim() || loadingNotes}
+                      className="bg-emerald-800 hover:bg-emerald-750 text-emerald-100 font-mono text-[8px] font-bold px-3 py-1 rounded cursor-pointer transition border border-emerald-950 shadow"
+                    >
+                      [LOG NOTE]
+                    </button>
+                  </form>
+
+                  {loadingNotes ? (
+                    <div className="flex-grow flex items-center space-x-2 py-4 justify-center text-amber-900">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>QUERYING SECOND BRAIN VAULT...</span>
+                    </div>
+                  ) : playerNotes && playerNotes.length > 0 ? (
+                    <ul className="space-y-1.5 text-[#4a3b2c] overflow-y-auto flex-1 max-h-[140px]">
+                      {playerNotes.map((note, index) => (
+                        <li key={index} className="font-mono bg-stone-200/50 p-1 rounded border border-stone-300/30 text-[9px]">
+                          {`📌 [LOG_${index.toString().padStart(2, '0')}] ${note}`}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-slate-600 block text-center py-4 flex-grow">YOUR JOURNAL IS EMPTY. START RECORDING COVERS TO PREVENT CONTRADICTIONS!</span>
                   )}
                 </div>
               )}
             </div>
 
-            <div className="border-t border-[#2d2640] pt-2 mt-2 flex justify-between text-[9px] font-mono text-slate-600 shrink-0">
+            <div className="border-t border-[#38251b] pt-2 mt-2 flex justify-between text-[9px] font-mono text-amber-800 shrink-0">
               <span>CORE TAG: {selectedNpcId}_{state.sessionId}</span>
               <button 
-                onClick={() => fetchMemories(state.sessionId)} 
-                className="hover:text-[#00f0ff] transition"
+                type="button"
+                onClick={() => {
+                  fetchMemories();
+                  fetchJournalNotes();
+                }} 
+                className="hover:text-amber-600 transition"
               >
                 [FORCE RE-QUERY]
               </button>
@@ -695,62 +1447,66 @@ export default function GamePage() {
 
       </div>
 
-      {/* Gossip Overlay Console */}
+      {/* Floating System Notifications */}
+      {lastNotification && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm bg-[#5c4033] border-2 border-amber-500 rounded p-3 shadow-2xl font-mono text-[10px] animate-bounce text-amber-200">
+          <div className="flex justify-between items-center border-b border-[#38251b] pb-1 mb-1 font-bold text-amber-500">
+            <span>[NOTIFICATION_LOG]</span>
+          </div>
+          {lastNotification.message}
+        </div>
+      )}
+
+      {/* Gossip Night Overlay Console */}
       {currentGossipIndex !== -1 && gossipAnimationLog[currentGossipIndex] && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 select-none scanlines">
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 select-none">
           
           <div className="text-center mb-8">
-            <Moon className="w-16 h-16 text-[#00f0ff] animate-bounce mx-auto mb-3" />
-            <h2 className="text-xl font-bold tracking-widest font-mono text-[#00f0ff] glow-text-cyan uppercase">NIGHT PHASE: THE TAVERN SPEAKS</h2>
-            <p className="text-[#ff0055] text-xs font-mono uppercase mt-1">Inter-node data packet sharing active...</p>
+            <Moon className="w-16 h-16 text-yellow-500 animate-bounce mx-auto mb-3" />
+            <h2 className="text-xl font-bold tracking-widest font-mono text-yellow-500 uppercase">NIGHTFALL: THE INN SHAKES WITH RUMORS</h2>
+            <p className="text-red-400 text-xs font-mono uppercase mt-1">Spreading whispers around the campfire...</p>
           </div>
 
-          <div className="bg-[#0b0018] border-3 border-[#ff0055] rounded-lg p-6 max-w-xl text-center shadow-[0_0_20px_rgba(255,0,85,0.15)] relative">
-            <span className="absolute top-2 left-3 font-mono text-[9px] text-slate-600">PKT_TRANS_LOG_#{currentGossipIndex + 1}</span>
+          <div className="bg-[#ebdcb9] border-4 border-[#38251b] rounded-lg p-6 max-w-xl text-center shadow-2xl relative">
+            <span className="absolute top-2 left-3 font-mono text-[9px] text-[#855b32]">CAMPFIRE_WHISPER_#{currentGossipIndex + 1}</span>
             
             <div className="flex items-center justify-center space-x-8 mb-6 mt-2">
               <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded overflow-hidden border border-[#00f0ff] bg-black">
+                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#38251b] bg-black">
                   <img src={state.npcs[gossipAnimationLog[currentGossipIndex].fromNpc].portrait} alt="Gossip speaker" className="w-full h-full object-cover grayscale" />
                 </div>
-                <span className="text-[10px] text-[#00f0ff] mt-2 font-mono font-bold uppercase">{state.npcs[gossipAnimationLog[currentGossipIndex].fromNpc].name}</span>
+                <span className="text-[10px] text-[#382c22] mt-2 font-mono font-bold uppercase">{state.npcs[gossipAnimationLog[currentGossipIndex].fromNpc].name}</span>
               </div>
 
-              <div className="flex items-center space-x-2 text-[#ff0055] animate-pulse">
+              <div className="flex items-center space-x-2 text-[#a84424] animate-pulse">
                 <span className="h-0.5 w-12 bg-slate-900 relative">
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff0055] animate-ping" />
+                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
                 </span>
                 <MessageSquare className="w-5 h-5" />
                 <span className="h-0.5 w-12 bg-slate-900 relative">
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff0055] animate-ping" />
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-red-500 animate-ping" />
                 </span>
               </div>
 
               <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded overflow-hidden border border-[#00f0ff] bg-black">
+                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-[#38251b] bg-black">
                   <img src={state.npcs[gossipAnimationLog[currentGossipIndex].toNpc].portrait} alt="Gossip target" className="w-full h-full object-cover grayscale" />
                 </div>
-                <span className="text-[10px] text-[#00f0ff] mt-2 font-mono font-bold uppercase">{state.npcs[gossipAnimationLog[currentGossipIndex].toNpc].name}</span>
+                <span className="text-[10px] text-[#382c22] mt-2 font-mono font-bold uppercase">{state.npcs[gossipAnimationLog[currentGossipIndex].toNpc].name}</span>
               </div>
             </div>
 
-            <p className="text-lg leading-relaxed text-slate-100 px-4 font-mono font-medium" style={{ fontFamily: 'var(--font-vt323)' }}>
+            <p className="text-lg leading-relaxed text-[#382c22] px-4 font-mono font-medium" style={{ fontFamily: 'var(--font-vt323)' }}>
               &ldquo;{gossipAnimationLog[currentGossipIndex].rumor}&rdquo;
             </p>
           </div>
 
-          <div className="mt-8 font-mono text-[9px] text-slate-600">
-            TRANSMITTING CONVERSATION PACKET {currentGossipIndex + 1} OF {gossipAnimationLog.length} · AUTO-PROGRESSING
+          <div className="mt-8 font-mono text-[9px] text-[#ebdcb9]/60">
+            RECORDING TALE {currentGossipIndex + 1} OF {gossipAnimationLog.length} · AUTO-PROGRESSING
           </div>
+          <div className="scanlines pointer-events-none" />
         </div>
       )}
-
-      {/* Bottom Banner (VA-11 Hall-A Marquee) */}
-      <div className="bg-[#00f0ff] text-[#05010b] h-6 flex items-center overflow-hidden border-t border-[#00f0ff] fixed bottom-0 left-0 w-full z-40 select-none">
-        <div className="animate-marquee-reverse inline-block font-mono text-[10px] font-bold tracking-widest uppercase">
-          ECHOES: THE VILLAGE THAT REMEMBERS • ACTIVE CONTEXT ENRICHED • BUILT WITH STITCH AND DEEPMIND AGENTS • ECHOES: THE VILLAGE THAT REMEMBERS • ACTIVE CONTEXT ENRICHED • BUILT WITH STITCH AND DEEPMIND AGENTS •
-        </div>
-      </div>
 
     </div>
   );
