@@ -4,11 +4,10 @@ import { useEffect, useState, useRef } from "react";
 import { 
   MessageSquare, Hammer, Shield, Coins, Crown, 
   AlertTriangle, Moon, RefreshCw, BookOpen, Activity,
-  ThumbsUp, Award, Flame, Heart, ChevronRight, User, Loader2
+  ChevronRight, User, Loader2
 } from "lucide-react";
 import { GameState, NPC, ChatMessage, GossipLog } from "@/lib/gameService";
 
-// Helper to map NPC icons
 const npcIcons: Record<string, any> = {
   blacksmith: Hammer,
   guard: Shield,
@@ -16,13 +15,13 @@ const npcIcons: Record<string, any> = {
   mayor: Crown,
 };
 
-// Coordinate mapping for SVG graph nodes
+// SVG coordinates for blueprint graph
 const nodeCoordinates: Record<string, { x: number; y: number }> = {
-  blacksmith: { x: 100, y: 80 },
-  guard: { x: 300, y: 80 },
-  player: { x: 200, y: 200 },
-  merchant: { x: 100, y: 320 },
-  mayor: { x: 300, y: 320 },
+  blacksmith: { x: 80, y: 70 },
+  guard: { x: 270, y: 70 },
+  player: { x: 175, y: 175 },
+  merchant: { x: 80, y: 280 },
+  mayor: { x: 270, y: 280 },
 };
 
 export default function GamePage() {
@@ -40,7 +39,7 @@ export default function GamePage() {
   } | null>(null);
   const [npcMemories, setNpcMemories] = useState<Record<string, string[]>>({});
   const [loadingMemories, setLoadingMemories] = useState<boolean>(false);
-  const [activeRightTab, setActiveRightTab] = useState<"mind" | "memories">("mind");
+  const [activeConsoleTab, setActiveConsoleTab] = useState<"mind" | "vault">("mind");
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
@@ -51,43 +50,26 @@ export default function GamePage() {
       const data = await res.json();
       setState(data);
       if (data) {
-        // Fetch memories for the selected NPC on start
         fetchMemories(data.sessionId);
       }
     } catch (error) {
-      showNotification("Failed to connect to the server.", "error");
+      showNotification("FAILED TO RETRIEVE VILLAGE STATE LOGS.", "error");
     } finally {
       setLoading(false);
     }
   };
 
-  // Fetch memories directly from Supermemory via a helper endpoint or state API
+  // Fetch memories using our secure backend API to prevent CORS issues
   const fetchMemories = async (sessionId: string) => {
     if (!sessionId) return;
     setLoadingMemories(true);
     const memories: Record<string, string[]> = {};
     try {
-      // Query each NPC's profile tag
       for (const npcId of ["blacksmith", "guard", "merchant", "mayor"]) {
-        const res = await fetch("http://localhost:6767/v4/profile", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": "Bearer sm_TJVd76vDvby6L3X1A7odNR_kcvgdl6FJk7bsxsh3G3QtcKTI0jAITaR6xzbeTe2YHUnKearEM0JkEC3Fc7EeFxS"
-          },
-          body: JSON.stringify({
-            containerTag: `${npcId}_${sessionId}`,
-            q: ""
-          })
-        });
+        const res = await fetch(`/api/memories?npcId=${npcId}`);
         if (res.ok) {
           const data = await res.json();
-          const facts = Array.from(new Set([
-            ...(data?.profile?.static || []),
-            ...(data?.profile?.dynamic || [])
-          ])) as string[];
-          // Filter out full conversation logs to keep it readable, showing just concrete facts
-          memories[npcId] = facts.filter(f => !f.startsWith("Conversation on Day"));
+          memories[npcId] = data;
         }
       }
       setNpcMemories(memories);
@@ -102,7 +84,6 @@ export default function GamePage() {
     fetchState();
   }, []);
 
-  // Scroll to bottom of chat
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [state?.conversations, selectedNpcId]);
@@ -114,7 +95,7 @@ export default function GamePage() {
     }, 6000);
   };
 
-  // Handle chat submission
+  // Handle player message submission
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!inputValue.trim() || isTalking || !state) return;
@@ -123,7 +104,6 @@ export default function GamePage() {
     setInputValue("");
     setIsTalking(true);
 
-    // Optimistically update player message locally first for instant feedback
     const originalState = JSON.parse(JSON.stringify(state));
     const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     const updatedState = { ...state };
@@ -140,21 +120,18 @@ export default function GamePage() {
         body: JSON.stringify({ npcId: selectedNpcId, message })
       });
 
-      if (!res.ok) {
-        throw new Error("API call failed");
-      }
+      if (!res.ok) throw new Error("Chat request failed");
 
       const result = await res.json();
 
-      // Refresh full game state
+      // Refresh state
       const stateRes = await fetch("/api/state");
       const freshState = await stateRes.json();
       setState(freshState);
 
-      // Trigger alerts/notifications based on AI response
       if (result.contradiction?.detected) {
         showNotification(
-          `LIE DETECTED! ${freshState.npcs[selectedNpcId].name} noticed an inconsistency: "${result.contradiction.reason}"`,
+          `CONTRADICTION DETECTED! ${freshState.npcs[selectedNpcId].name} noticed an inconsistency: "${result.contradiction.reason}"`,
           "warning"
         );
       } else {
@@ -164,36 +141,34 @@ export default function GamePage() {
         if (changes.friendship !== 0) changeTexts.push(`Friendship ${changes.friendship > 0 ? "+" : ""}${changes.friendship}`);
         
         if (changeTexts.length > 0) {
-          showNotification(`${freshState.npcs[selectedNpcId].name}: ${changeTexts.join(", ")}`, "success");
+          showNotification(`${freshState.npcs[selectedNpcId].name} reputation updated: ${changeTexts.join(", ")}`, "success");
         }
       }
 
-      // Refresh memories display
       fetchMemories(freshState.sessionId);
 
     } catch (error) {
       setState(originalState);
-      showNotification("Failed to send message. Is the server running?", "error");
+      showNotification("FAILED TO COMMUNICATE WITH VILLAGER.", "error");
     } finally {
       setIsTalking(false);
     }
   };
 
-  // Advance Day & Trigger Gossip phase
+  // Sleep/Advance Day
   const handleAdvanceDay = async () => {
     if (isGossiping || !state) return;
 
     setIsGossiping(true);
-    showNotification("Gathering at the tavern... rumors are starting to spread.", "info");
+    showNotification("THE VINTAGE INN GROWS LOUD... RUMORS PROPAGATING...", "info");
 
     try {
       const res = await fetch("/api/gossip", { method: "POST" });
-      if (!res.ok) throw new Error("Gossip phase failed");
+      if (!res.ok) throw new Error("Gossip cycle failed");
 
       const data = await res.json();
       setGossipAnimationLog(data.gossipLogs);
       
-      // Run sequential gossip animation
       if (data.gossipLogs.length > 0) {
         let idx = 0;
         setCurrentGossipIndex(0);
@@ -207,24 +182,24 @@ export default function GamePage() {
             setCurrentGossipIndex(-1);
             setGossipAnimationLog([]);
             setState(data.state);
-            showNotification(`Day ${data.state.day} has begun. The village whispers...`, "info");
+            showNotification(`DAY ${data.state.day} STARTED. MEMORY VAULTS STABILIZED.`, "info");
             fetchMemories(data.state.sessionId);
             setIsGossiping(false);
           }
-        }, 5000); // 5 seconds per rumor
+        }, 5000);
       } else {
         setState(data.state);
         setIsGossiping(false);
       }
     } catch (error) {
-      showNotification("Failed to advance day. Connection error.", "error");
+      showNotification("DAY TRANSITION FAILED. DISCONNECTION DETECTED.", "error");
       setIsGossiping(false);
     }
   };
 
   // Reset Game
   const handleResetGame = async () => {
-    if (!confirm("Are you sure you want to restart? This will clear all memories.")) return;
+    if (!confirm("WIPE ENGINE MEMORY VAULTS AND REBOOT?")) return;
     setLoading(true);
     try {
       const res = await fetch("/api/state", {
@@ -236,573 +211,545 @@ export default function GamePage() {
       setState(data);
       setSelectedNpcId("blacksmith");
       setNpcMemories({});
-      showNotification("Game reset. Welcome back to Echoes.", "success");
+      showNotification("SYSTEM DEFRAGMENTED. SEED MEMORIES ESTABLISHED.", "success");
       setTimeout(() => fetchMemories(data.sessionId), 1000);
     } catch (e) {
-      showNotification("Failed to reset game.", "error");
+      showNotification("FAILED TO EXECUTE REBOOT.", "error");
     } finally {
       setLoading(false);
     }
   };
 
+  // Helper to generate terminal progress bar
+  const renderProgressBar = (value: number) => {
+    const barsCount = Math.round(value / 10);
+    const emptyCount = 10 - barsCount;
+    return `[${"█".repeat(barsCount)}${"░".repeat(emptyCount)}] ${value}%`;
+  };
+
   if (loading || !state) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center bg-slate-950 text-slate-100 min-h-screen">
-        <Loader2 className="w-12 h-12 text-emerald-500 animate-spin mb-4" />
-        <p className="text-slate-400 font-mono tracking-widest text-sm">LOADING VILLAGE OF ECHOES...</p>
+      <div className="flex-grow flex flex-col items-center justify-center bg-[#05010b] text-[#00f0ff] min-h-screen scanlines">
+        <Loader2 className="w-12 h-12 text-[#00f0ff] animate-spin mb-4" />
+        <p className="font-mono tracking-widest text-xs uppercase animate-pulse">INITIATING COGNITIVE TERMINAL SYSTEM...</p>
       </div>
     );
   }
 
   const selectedNpc = state.npcs[selectedNpcId];
   const conversations = state.conversations[selectedNpcId] || [];
+  const latestNpcMessage = conversations.slice().reverse().find(c => c.sender === "npc")?.content || 
+    `Select a target from the location terminal below and state your purpose.`;
 
   return (
-    <div className="flex-1 flex flex-col bg-slate-950 text-slate-100 font-sans min-h-screen overflow-x-hidden relative">
+    <div className="min-h-screen flex flex-col bg-[#05010b] text-[#e2e8f0] relative select-none font-sans overflow-hidden pb-10">
       
-      {/* Glow Effects */}
-      <div className="absolute top-[-10%] left-[20%] w-[500px] h-[500px] rounded-full bg-emerald-950/10 blur-[120px] pointer-events-none" />
-      <div className="absolute bottom-[-15%] right-[10%] w-[600px] h-[600px] rounded-full bg-blue-950/10 blur-[150px] pointer-events-none" />
+      {/* Scanline Overlay */}
+      <div className="scanlines" />
 
-      {/* Header */}
-      <header className="border-b border-slate-900 bg-slate-950/80 backdrop-blur-md px-6 py-4 flex items-center justify-between sticky top-0 z-50">
-        <div className="flex items-center space-x-3">
-          <div className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse" />
-          <div>
-            <h1 className="text-xl font-bold tracking-widest font-mono text-emerald-400">ECHOES</h1>
-            <p className="text-[10px] text-slate-500 tracking-wider">A SOCIAL SIMULATION POWERED BY SUPERMEMORY</p>
-          </div>
+      {/* Top Banner (VA-11 Hall-A Marquee) */}
+      <div className="bg-[#00f0ff] text-[#05010b] h-6 flex items-center overflow-hidden border-b border-[#00f0ff] z-40 select-none">
+        <div className="animate-marquee inline-block font-mono text-[10px] font-bold tracking-widest uppercase">
+          ECHOES: CYBERPUNK SOCIAL SIMULATION • POWERED BY SUPERMEMORY AI • STATUS: OPERATIONAL • DAY: {state.day} • ECHOES: CYBERPUNK SOCIAL SIMULATION • POWERED BY SUPERMEMORY AI • STATUS: OPERATIONAL • DAY: {state.day} •
         </div>
+      </div>
 
-        <div className="flex items-center space-x-6">
-          <div className="bg-slate-900/60 border border-slate-800 rounded-lg px-4 py-1.5 flex items-center space-x-3">
-            <span className="text-slate-400 text-xs font-mono">CALENDAR:</span>
-            <span className="text-emerald-400 font-mono font-bold tracking-wider">DAY {state.day}</span>
-          </div>
-
-          <button 
-            onClick={handleAdvanceDay}
-            disabled={isGossiping || state.gameEnded}
-            className="flex items-center space-x-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-40 text-slate-950 font-bold px-4 py-2 rounded-lg text-sm transition shadow-lg shadow-emerald-950/20 cursor-pointer"
-          >
-            <Moon className="w-4 h-4" />
-            <span>{isGossiping ? "GOSSIPING..." : "END DAY (SLEEP)"}</span>
-          </button>
-
-          <button 
-            onClick={handleResetGame}
-            title="Reset Game"
-            className="p-2 border border-slate-800 hover:bg-slate-900 rounded-lg transition cursor-pointer"
-          >
-            <RefreshCw className="w-4 h-4 text-slate-400 hover:text-white" />
-          </button>
-        </div>
-      </header>
-
-      {/* Notification Toast */}
-      {lastNotification && (
-        <div className={`fixed top-20 right-6 z-50 flex items-center space-x-3 px-5 py-3 rounded-xl border max-w-md shadow-2xl animate-in slide-in-from-top-4 duration-300 ${
-          lastNotification.type === "warning" ? "bg-amber-950/80 border-amber-800 text-amber-200" :
-          lastNotification.type === "success" ? "bg-emerald-950/80 border-emerald-800 text-emerald-200" :
-          lastNotification.type === "error" ? "bg-red-950/80 border-red-800 text-red-200" :
-          "bg-slate-900/90 border-slate-700 text-slate-100"
-        }`}>
-          {lastNotification.type === "warning" && <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0" />}
-          <p className="text-sm font-medium">{lastNotification.message}</p>
-        </div>
-      )}
-
-      {/* Gossip Overlay */}
-      {currentGossipIndex !== -1 && gossipAnimationLog[currentGossipIndex] && (
-        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/90 backdrop-blur-md p-6 animate-fade-in">
-          <div className="absolute top-[20%] text-center">
-            <Moon className="w-16 h-16 text-indigo-400 animate-bounce mx-auto mb-4" />
-            <h2 className="text-2xl font-bold tracking-widest font-mono text-indigo-400">THE TAVERN AT NIGHT</h2>
-            <p className="text-slate-500 text-sm mt-1">Whispers fill the dark corner booths...</p>
-          </div>
-
-          <div className="bg-slate-900/60 border border-slate-800 rounded-2xl p-8 max-w-2xl text-center shadow-2xl relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-indigo-500 via-purple-500 to-pink-500" />
+      {/* Main Body */}
+      <div className="flex-1 flex flex-col max-w-6xl mx-auto w-full px-6 pt-6 gap-6 relative z-10 crt-screen">
+        
+        {/* Upper Screen View: Player, Location, NPC monitors */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+          
+          {/* Player Monitor */}
+          <div className="monitor-bezel rounded p-4 flex flex-col items-center justify-center text-center">
+            {/* Design accents */}
+            <div className="absolute top-2 left-2 flex space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff] animate-pulse" />
+              <span className="w-1.5 h-1.5 bg-[#2d2640] rounded-full" />
+            </div>
+            <span className="absolute top-2 right-3 font-mono text-[9px] text-slate-600">SYS_P01</span>
             
-            <div className="flex items-center justify-center space-x-6 mb-6">
-              <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-indigo-500">
-                  <img src={state.npcs[gossipAnimationLog[currentGossipIndex].fromNpc].portrait} alt="Gossip speaker" className="w-full h-full object-cover" />
+            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest mb-3 uppercase">PLAYER MONITOR</span>
+            
+            <div className="w-28 h-28 monitor-screen rounded-full overflow-hidden flex items-center justify-center bg-slate-900 border-2 border-[#00f0ff]">
+              <div className="w-full h-full relative flex items-center justify-center bg-[#090312]">
+                <User className="w-16 h-16 text-[#00f0ff] opacity-80" />
+                {/* Neon blueprint circle */}
+                <div className="absolute inset-2 rounded-full border border-dashed border-[#00f0ff]/30 animate-spin" style={{ animationDuration: '20s' }} />
+              </div>
+            </div>
+            
+            <span className="font-mono text-xs text-emerald-400 mt-3 font-bold tracking-wider uppercase">SIR GALAHAD</span>
+            <span className="font-mono text-[10px] text-slate-500 mt-1 uppercase">Traveler Identity</span>
+          </div>
+
+          {/* Location / Action Monitor */}
+          <div className="monitor-bezel rounded p-4 flex flex-col items-center justify-between text-center min-h-[220px]">
+            <div className="absolute top-2 left-2 flex space-x-1">
+              <span className="w-1.5 h-1.5 bg-[#2d2640] rounded-full" />
+              <span className="w-1.5 h-1.5 bg-[#2d2640] rounded-full" />
+            </div>
+            <span className="absolute top-2 right-3 font-mono text-[9px] text-slate-600">LOC_M02</span>
+
+            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest uppercase">LOCATION VISUALIZER</span>
+
+            {/* Stylized Pixel Location Art Frame */}
+            <div className="w-full max-w-[200px] h-24 monitor-screen rounded bg-[#0b0018] flex flex-col items-center justify-center relative overflow-hidden p-2">
+              <div className="absolute inset-0 bg-[linear-gradient(rgba(0,240,255,0.08)_1px,transparent_1px)] bg-[size:100%_8px] pointer-events-none" />
+              
+              {selectedNpcId === "blacksmith" && (
+                <div className="text-center">
+                  <Hammer className="w-8 h-8 text-[#00f0ff] mx-auto mb-1 animate-bounce" />
+                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">VILLAGE FORGE</span>
+                  <span className="text-[8px] text-slate-500 uppercase">Temp: 1200°C • Smoke Detected</span>
                 </div>
-                <span className="text-xs text-indigo-400 mt-2 font-mono">{state.npcs[gossipAnimationLog[currentGossipIndex].fromNpc].name}</span>
+              )}
+              {selectedNpcId === "guard" && (
+                <div className="text-center">
+                  <Shield className="w-8 h-8 text-[#00f0ff] mx-auto mb-1 animate-pulse" />
+                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">VILLAGE BARRACKS</span>
+                  <span className="text-[8px] text-slate-500 uppercase">Alert: Level 1 • Gates Locked</span>
+                </div>
+              )}
+              {selectedNpcId === "merchant" && (
+                <div className="text-center">
+                  <Coins className="w-8 h-8 text-[#00f0ff] mx-auto mb-1" />
+                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">SILAS EXCHANGE</span>
+                  <span className="text-[8px] text-slate-500 uppercase">Market: Open • Gold Index +4%</span>
+                </div>
+              )}
+              {selectedNpcId === "mayor" && (
+                <div className="text-center">
+                  <Crown className="w-8 h-8 text-[#00f0ff] mx-auto mb-1" />
+                  <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block font-bold">MAYOR COUNCIL HALL</span>
+                  <span className="text-[8px] text-slate-500 uppercase">Access: Restricted • Evelyn in</span>
+                </div>
+              )}
+            </div>
+
+            <div className="w-full flex justify-center space-x-2 font-mono text-[10px]">
+              <span className="text-slate-600">SECTOR:</span>
+              <span className="text-[#00f0ff] font-bold uppercase">{selectedNpcId}_SECTOR</span>
+            </div>
+          </div>
+
+          {/* NPC Monitor */}
+          <div className="monitor-bezel rounded p-4 flex flex-col items-center justify-center text-center">
+            <div className="absolute top-2 left-2 flex space-x-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#ff0055]" />
+              <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff]" />
+            </div>
+            <span className="absolute top-2 right-3 font-mono text-[9px] text-slate-600">NPC_X03</span>
+
+            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest mb-3 uppercase">ACTIVE NPC INTERFACE</span>
+
+            {/* NPC Portrait Box */}
+            <div className="w-28 h-28 monitor-screen rounded overflow-hidden relative border-2 border-[#ff0055]">
+              <img src={selectedNpc.portrait} alt={selectedNpc.name} className="w-full h-full object-cover grayscale opacity-90 contrast-125" />
+              {/* Scanline overlay specific to portrait */}
+              <div className="absolute inset-0 bg-gradient-to-b from-[#00f0ff]/10 to-transparent pointer-events-none animate-pulse" />
+            </div>
+
+            <span className="font-mono text-xs text-[#ff0055] mt-3 font-bold tracking-wider uppercase glow-text-magenta">{selectedNpc.name.toUpperCase()}</span>
+            <span className="font-mono text-[10px] text-slate-500 mt-1 uppercase">{selectedNpc.role.toUpperCase()}</span>
+          </div>
+
+        </div>
+
+        {/* Location selector links */}
+        <div className="monitor-bezel rounded p-3 flex flex-wrap justify-around items-center gap-2">
+          <span className="font-mono text-[10px] text-slate-600 uppercase mr-2">[TARGET LOG]</span>
+          
+          {Object.values(state.npcs).map((npc) => {
+            const isSelected = selectedNpcId === npc.id;
+            return (
+              <button
+                key={npc.id}
+                onClick={() => {
+                  setSelectedNpcId(npc.id);
+                  showNotification(`INSULATION SET TO ${npc.name.toUpperCase()}`, "info");
+                }}
+                className={`font-mono text-xs px-4 py-2 border rounded cursor-pointer transition ${
+                  isSelected
+                    ? "bg-[#ff0055]/15 border-[#ff0055] text-[#ff0055] font-bold glow-text-magenta shadow-[0_0_8px_rgba(255,0,85,0.2)]"
+                    : "bg-[#0b0018] border-[#2d2640] text-slate-400 hover:border-[#00f0ff] hover:text-[#00f0ff]"
+                }`}
+              >
+                {`[TALK: ${npc.name.toUpperCase()}]`}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* System Warnings / Ending Overlays */}
+        {state.gameEnded && (
+          <div className="border-2 border-[#ff0055] bg-[#ff0055]/10 rounded p-6 text-center animate-pulse relative">
+            <span className="absolute top-2 left-2 text-[9px] text-[#ff0055] font-mono">SYS_ALERT</span>
+            <AlertTriangle className="w-12 h-12 text-[#ff0055] mx-auto mb-3" />
+            <h3 className="text-xl font-bold font-mono tracking-widest text-[#ff0055] uppercase glow-text-magenta">
+              {state.endingType === "arrested" && "TERMINAL FAULT: CAPTURED"}
+              {state.endingType === "outcast" && "TERMINAL FAULT: DEPORTED"}
+              {state.endingType === "mayor" && "VICTORY: COGNITIVE MASTER"}
+              {state.endingType === "merchant" && "VICTORY: LIQUIDITY CONTROLLER"}
+              {state.endingType === "friend" && "VICTORY: COGNITIVE HARMONY"}
+            </h3>
+            <p className="text-sm text-slate-300 mt-2 max-w-2xl mx-auto leading-relaxed font-mono">
+              {state.endingType === "arrested" && "Your statements failed Kael's consistency matrix. Declared an unregistered spy and locked in the cell blocks indefinitely."}
+              {state.endingType === "outcast" && "Rumors of your multiple identities propagated through all node networks. driven out as an active threat."}
+              {state.endingType === "mayor" && "Successful manipulation completed. Evelyn trust matrix reached 100%. Appointed administrative director of Echoes."}
+              {state.endingType === "merchant" && "Silas loved your business secrets. You've established trade monopoly and monopolized village liquidity."}
+              {state.endingType === "friend" && "Full network consensus achieved. All inhabitants registered 80%+ friendship metrics."}
+            </p>
+            <button
+              onClick={handleResetGame}
+              className="mt-4 font-mono text-xs px-6 py-2 border-2 border-[#ff0055] text-[#ff0055] hover:bg-[#ff0055] hover:text-white transition cursor-pointer rounded"
+            >
+              [REBOOT MATRIX]
+            </button>
+          </div>
+        )}
+
+        {/* Dialogue Box (VA-11 Hall-A dialogue console) */}
+        <div className="bg-[#020005] border-3 border-[#2d2640] rounded p-6 min-h-[160px] flex flex-col justify-between relative shadow-[inset_0_0_20px_rgba(0,0,0,0.9)]">
+          {/* LED blink accents */}
+          <div className="absolute top-2 right-4 flex items-center space-x-2">
+            <span className="text-[9px] font-mono text-slate-700">TEXT_BUFF</span>
+            <span className={`w-2 h-2 rounded-full ${isTalking ? "bg-emerald-500 animate-ping" : "bg-[#ff0055] animate-pulse"}`} />
+          </div>
+
+          <div className="flex-1 flex flex-col font-mono">
+            {/* Speaker Name Tag */}
+            <span className="text-[#ff0055] font-bold text-sm tracking-widest glow-text-magenta uppercase mb-1">
+              {isTalking ? "SYSTEM PROCESSING..." : selectedNpc.name}:
+            </span>
+            
+            {/* Dialogue block */}
+            <div className="text-lg leading-relaxed font-mono font-medium text-slate-100 flex-1 whitespace-pre-wrap select-text font-mono" style={{ fontFamily: 'var(--font-vt323)' }}>
+              {isTalking ? (
+                <span className="opacity-80 text-emerald-400">Loading response text from node database...</span>
+              ) : (
+                <>
+                  {latestNpcMessage}
+                  <span className="blink ml-1 text-[#ff0055]">█</span>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Dialogue box prompt line / blinking next cursor */}
+          <div className="flex justify-end pt-3">
+            <div className="flex items-center space-x-2 font-mono text-[9px] text-[#ff0055] animate-pulse uppercase">
+              <span className="tracking-widest">NEXT CONVERSATION PIECE</span>
+              <ChevronRight className="w-3.5 h-3.5 rotate-90" />
+            </div>
+          </div>
+        </div>
+
+        {/* Input Bar Terminal */}
+        <form onSubmit={handleSendMessage} className="monitor-bezel rounded p-3">
+          <div className="flex gap-3">
+            <div className="flex items-center text-xs text-[#00f0ff] font-mono px-2 font-bold select-none shrink-0">
+              SYS_INPUT&gt;
+            </div>
+            <input
+              type="text"
+              value={inputValue}
+              onChange={(e) => setInputValue(e.target.value)}
+              placeholder={`STATE YOUR MESSAGE TO ${selectedNpc.name.toUpperCase()} (e.g. 'I am Sir Galahad')`}
+              disabled={isTalking || state.gameEnded}
+              className="flex-1 bg-black border border-[#2d2640] hover:border-[#00f0ff] focus:border-[#00f0ff] rounded px-4 py-2.5 text-xs text-emerald-400 placeholder-[#2d2640] focus:outline-none focus:ring-1 focus:ring-[#00f0ff] font-mono tracking-wider transition uppercase"
+            />
+            <button
+              type="submit"
+              disabled={!inputValue.trim() || isTalking || state.gameEnded}
+              className="border-2 border-[#00f0ff] hover:bg-[#00f0ff] hover:text-[#05010b] disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-[#00f0ff] text-[#00f0ff] font-mono text-xs font-bold px-6 py-2.5 rounded transition shrink-0 cursor-pointer"
+            >
+              [TRANSMIT]
+            </button>
+          </div>
+        </form>
+
+        {/* Lower Console: Metrics Grid & Tabular Interactive Panel */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
+          
+          {/* Left Block: Metrics Grid (5 cols) */}
+          <div className="md:col-span-5 monitor-bezel rounded p-4 flex flex-col justify-between">
+            <span className="font-mono text-[10px] text-[#00f0ff] tracking-widest block uppercase mb-4">REPUTATION MATRIX DUMP</span>
+            
+            <div className="space-y-4 font-mono text-[11px] flex-1 flex flex-col justify-center">
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <span>TRUST MATRIX:</span>
+                  <span className={selectedNpc.metrics.trust > 70 ? "text-emerald-400" : selectedNpc.metrics.trust < 30 ? "text-[#ff0055]" : "text-[#00f0ff]"}>
+                    {renderProgressBar(selectedNpc.metrics.trust)}
+                  </span>
+                </div>
               </div>
 
-              <div className="flex items-center space-x-2 text-indigo-500 animate-pulse">
-                <span className="h-0.5 w-16 bg-indigo-900 relative">
-                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
-                </span>
-                <MessageSquare className="w-6 h-6" />
-                <span className="h-0.5 w-16 bg-indigo-900 relative">
-                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-2 h-2 rounded-full bg-indigo-400 animate-ping" />
-                </span>
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <span>RESPECT MATRIX:</span>
+                  <span className="text-[#00f0ff]">{renderProgressBar(selectedNpc.metrics.respect)}</span>
+                </div>
               </div>
 
-              <div className="flex flex-col items-center">
-                <div className="w-16 h-16 rounded-full overflow-hidden border-2 border-indigo-500">
-                  <img src={state.npcs[gossipAnimationLog[currentGossipIndex].toNpc].portrait} alt="Gossip target" className="w-full h-full object-cover" />
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <span>FEAR INDEX:</span>
+                  <span className="text-orange-500">{renderProgressBar(selectedNpc.metrics.fear)}</span>
                 </div>
-                <span className="text-xs text-indigo-400 mt-2 font-mono">{state.npcs[gossipAnimationLog[currentGossipIndex].toNpc].name}</span>
+              </div>
+
+              <div>
+                <div className="flex justify-between text-slate-400 mb-1">
+                  <span>FRIEND CONSENSUS:</span>
+                  <span className="text-pink-500">{renderProgressBar(selectedNpc.metrics.friendship)}</span>
+                </div>
               </div>
             </div>
 
-            <p className="text-xl italic font-serif text-slate-100 px-4 leading-relaxed">
+            <div className="border-t border-[#2d2640] pt-3 mt-3 flex justify-between items-center text-[9px] font-mono text-slate-600">
+              <span>LED STATUS: GREEN (STABLE)</span>
+              <span>INDEX v1.1.2</span>
+            </div>
+          </div>
+
+          {/* Right Block: Tabular Interactive Panel (7 cols) */}
+          <div className="md:col-span-7 monitor-bezel rounded p-4 flex flex-col justify-between">
+            
+            {/* Console Tab Selector */}
+            <div className="flex border-b border-[#2d2640] pb-2 mb-3 justify-between items-center shrink-0">
+              <div className="flex space-x-2">
+                <button
+                  onClick={() => setActiveConsoleTab("mind")}
+                  className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
+                    activeConsoleTab === "mind"
+                      ? "bg-[#00f0ff]/10 border-[#00f0ff] text-[#00f0ff]"
+                      : "border-transparent text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  [VILLAGE MIND MAP]
+                </button>
+                <button
+                  onClick={() => setActiveConsoleTab("vault")}
+                  className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
+                    activeConsoleTab === "vault"
+                      ? "bg-[#00f0ff]/10 border-[#00f0ff] text-[#00f0ff]"
+                      : "border-transparent text-slate-500 hover:text-slate-300"
+                  }`}
+                >
+                  [MEMORY DB DUMP]
+                </button>
+              </div>
+
+              <button 
+                onClick={handleAdvanceDay}
+                disabled={isGossiping || state.gameEnded}
+                className="font-mono text-[10px] px-3 py-1 border border-[#00f0ff] text-[#00f0ff] hover:bg-[#00f0ff] hover:text-[#05010b] disabled:opacity-30 rounded transition cursor-pointer shrink-0"
+              >
+                {isGossiping ? "[GOSSIPING...]" : "[SLEEP / CYCLE DAY]"}
+              </button>
+            </div>
+
+            {/* Tab Contents */}
+            <div className="flex-1 min-h-[220px] flex flex-col justify-center">
+              {activeConsoleTab === "mind" ? (
+                /* Blueprint SVG Graph */
+                <div className="bg-[#030008] border border-[#2d2640] rounded flex-1 relative overflow-hidden flex items-center justify-center p-1">
+                  <svg className="w-full h-full max-h-[210px]" viewBox="0 0 350 350">
+                    <defs>
+                      <marker id="cyan-arrow" viewBox="0 0 10 10" refX="15" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                        <path d="M 0 0 L 10 5 L 0 10 z" fill="#00f0ff" />
+                      </marker>
+                    </defs>
+
+                    {/* Background blueprint grid lines */}
+                    <path d="M 0 175 L 350 175 M 175 0 L 175 350" stroke="#1c122b" strokeWidth="1" strokeDasharray="3,3" />
+
+                    {/* Nodes Links */}
+                    <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.guard.x} y2={nodeCoordinates.guard.y} stroke="#2d2640" strokeWidth="1.5" />
+                    <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.merchant.x} y2={nodeCoordinates.merchant.y} stroke="#441a2e" strokeWidth="1.5" />
+                    <line x1={nodeCoordinates.guard.x} y1={nodeCoordinates.guard.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#2d2640" strokeWidth="1.5" />
+                    <line x1={nodeCoordinates.merchant.x} y1={nodeCoordinates.merchant.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#2d2640" strokeWidth="1.5" />
+
+                    {/* Player trust vectors */}
+                    {Object.entries(state.npcs).map(([id, npc]) => {
+                      const coords = nodeCoordinates[id];
+                      const playerCoords = nodeCoordinates.player;
+                      const isHigh = npc.metrics.trust > 70;
+                      const isLow = npc.metrics.trust < 30;
+                      const color = isHigh ? "#00f0ff" : isLow ? "#ff0055" : "#7c3aed";
+                      
+                      return (
+                        <g key={id}>
+                          <line 
+                            x1={playerCoords.x} 
+                            y1={playerCoords.y} 
+                            x2={coords.x} 
+                            y2={coords.y} 
+                            stroke={color} 
+                            strokeWidth="1.5"
+                            strokeDasharray="4,2"
+                            markerEnd="url(#cyan-arrow)"
+                          />
+                          <text 
+                            x={(playerCoords.x + coords.x) / 2} 
+                            y={(playerCoords.y + coords.y) / 2 - 4} 
+                            fill={color} 
+                            fontSize="8" 
+                            fontFamily="monospace"
+                            textAnchor="middle"
+                          >
+                            {`T:${npc.metrics.trust}`}
+                          </text>
+                        </g>
+                      );
+                    })}
+
+                    {/* Node shapes */}
+                    {/* Player */}
+                    <circle cx={nodeCoordinates.player.x} cy={nodeCoordinates.player.y} r="12" fill="#05010b" stroke="#00f0ff" strokeWidth="2" />
+                    <text x={nodeCoordinates.player.x} y={nodeCoordinates.player.y + 4} fill="#00f0ff" fontSize="9" fontFamily="monospace" textAnchor="middle" fontWeight="bold">P</text>
+
+                    {/* NPC nodes */}
+                    {Object.entries(state.npcs).map(([id, npc]) => {
+                      const coords = nodeCoordinates[id];
+                      const isSelected = selectedNpcId === id;
+                      return (
+                        <g key={id} className="cursor-pointer" onClick={() => setSelectedNpcId(id)}>
+                          <circle 
+                            cx={coords.x} 
+                            cy={coords.y} 
+                            r="15" 
+                            fill="#05010b" 
+                            stroke={isSelected ? "#ff0055" : "#2d2640"} 
+                            strokeWidth={isSelected ? "2.5" : "1.5"} 
+                          />
+                          <text 
+                            x={coords.x} 
+                            y={coords.y + 3} 
+                            fill={isSelected ? "#ff0055" : "#00f0ff"} 
+                            fontSize="9" 
+                            fontFamily="monospace" 
+                            textAnchor="middle"
+                          >
+                            {npc.name[0]}
+                          </text>
+                          <text 
+                            x={coords.x} 
+                            y={coords.y + 24} 
+                            fill={isSelected ? "#ff0055" : "slate-500"} 
+                            fontSize="7" 
+                            fontFamily="monospace" 
+                            textAnchor="middle"
+                          >
+                            {npc.name.toUpperCase()}
+                          </text>
+                        </g>
+                      );
+                    })}
+                  </svg>
+                </div>
+              ) : (
+                /* Supermemory Dump Logs */
+                <div className="bg-[#020005] border border-[#2d2640] rounded flex-1 overflow-y-auto p-3 text-[10px] leading-relaxed text-[#00f0ff] font-mono select-text relative">
+                  <div className="absolute top-1 right-2 text-slate-700 select-none text-[8px]">MEM_DUMP_OK</div>
+                  
+                  <span className="text-slate-500 block border-b border-[#2d2640] pb-1 mb-2">
+                    NPC: {selectedNpc.name.toUpperCase()} • MEMORIES RETRIEVED FROM VECTOR STORE:
+                  </span>
+                  
+                  {loadingMemories ? (
+                    <div className="flex items-center space-x-2 py-4 justify-center">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>ACCESSING MEMORY CORE CELLS...</span>
+                    </div>
+                  ) : npcMemories[selectedNpcId] && npcMemories[selectedNpcId].length > 0 ? (
+                    <ul className="space-y-1">
+                      {npcMemories[selectedNpcId].map((mem, index) => (
+                        <li key={index} className="text-emerald-400 font-mono">
+                          {`> [REC_${index.toString().padStart(2, '0')}] ${mem}`}
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <span className="text-slate-600 block text-center py-4">NO CONCRETE COGNITIVE PATTERNS INDEXED FOR {selectedNpc.name.toUpperCase()}.</span>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="border-t border-[#2d2640] pt-2 mt-2 flex justify-between text-[9px] font-mono text-slate-600 shrink-0">
+              <span>CORE TAG: {selectedNpcId}_{state.sessionId}</span>
+              <button 
+                onClick={() => fetchMemories(state.sessionId)} 
+                className="hover:text-[#00f0ff] transition"
+              >
+                [FORCE RE-QUERY]
+              </button>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+
+      {/* Gossip Overlay Console */}
+      {currentGossipIndex !== -1 && gossipAnimationLog[currentGossipIndex] && (
+        <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-black/95 select-none scanlines">
+          
+          <div className="text-center mb-8">
+            <Moon className="w-16 h-16 text-[#00f0ff] animate-bounce mx-auto mb-3" />
+            <h2 className="text-xl font-bold tracking-widest font-mono text-[#00f0ff] glow-text-cyan uppercase">NIGHT PHASE: THE TAVERN SPEAKS</h2>
+            <p className="text-[#ff0055] text-xs font-mono uppercase mt-1">Inter-node data packet sharing active...</p>
+          </div>
+
+          <div className="bg-[#0b0018] border-3 border-[#ff0055] rounded-lg p-6 max-w-xl text-center shadow-[0_0_20px_rgba(255,0,85,0.15)] relative">
+            <span className="absolute top-2 left-3 font-mono text-[9px] text-slate-600">PKT_TRANS_LOG_#{currentGossipIndex + 1}</span>
+            
+            <div className="flex items-center justify-center space-x-8 mb-6 mt-2">
+              <div className="flex flex-col items-center">
+                <div className="w-16 h-16 rounded overflow-hidden border border-[#00f0ff] bg-black">
+                  <img src={state.npcs[gossipAnimationLog[currentGossipIndex].fromNpc].portrait} alt="Gossip speaker" className="w-full h-full object-cover grayscale" />
+                </div>
+                <span className="text-[10px] text-[#00f0ff] mt-2 font-mono font-bold uppercase">{state.npcs[gossipAnimationLog[currentGossipIndex].fromNpc].name}</span>
+              </div>
+
+              <div className="flex items-center space-x-2 text-[#ff0055] animate-pulse">
+                <span className="h-0.5 w-12 bg-slate-900 relative">
+                  <span className="absolute right-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff0055] animate-ping" />
+                </span>
+                <MessageSquare className="w-5 h-5" />
+                <span className="h-0.5 w-12 bg-slate-900 relative">
+                  <span className="absolute left-0 top-1/2 -translate-y-1/2 w-1.5 h-1.5 rounded-full bg-[#ff0055] animate-ping" />
+                </span>
+              </div>
+
+              <div className="flex flex-col items-center">
+                <div className="w-16 h-16 rounded overflow-hidden border border-[#00f0ff] bg-black">
+                  <img src={state.npcs[gossipAnimationLog[currentGossipIndex].toNpc].portrait} alt="Gossip target" className="w-full h-full object-cover grayscale" />
+                </div>
+                <span className="text-[10px] text-[#00f0ff] mt-2 font-mono font-bold uppercase">{state.npcs[gossipAnimationLog[currentGossipIndex].toNpc].name}</span>
+              </div>
+            </div>
+
+            <p className="text-lg leading-relaxed text-slate-100 px-4 font-mono font-medium" style={{ fontFamily: 'var(--font-vt323)' }}>
               &ldquo;{gossipAnimationLog[currentGossipIndex].rumor}&rdquo;
             </p>
           </div>
 
-          <div className="absolute bottom-[20%] text-slate-600 font-mono text-xs">
-            RUMOR {currentGossipIndex + 1} OF {gossipAnimationLog.length} · AUTOMATICALLY PROGRESSING
+          <div className="mt-8 font-mono text-[9px] text-slate-600">
+            TRANSMITTING CONVERSATION PACKET {currentGossipIndex + 1} OF {gossipAnimationLog.length} · AUTO-PROGRESSING
           </div>
         </div>
       )}
 
-      {/* Main Game Interface */}
-      <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 gap-6 p-6 overflow-hidden">
-        
-        {/* Left Panel: NPC Selection & Village Map (3 cols) */}
-        <div className="lg:col-span-3 flex flex-col space-y-4">
-          <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-4 flex-1 flex flex-col">
-            <h2 className="text-xs font-bold tracking-widest text-slate-500 font-mono mb-4 uppercase">VILLAGE INHABITANTS</h2>
-            
-            <div className="flex-1 space-y-3 overflow-y-auto pr-1">
-              {Object.values(state.npcs).map((npc) => {
-                const Icon = npcIcons[npc.id];
-                const isSelected = selectedNpcId === npc.id;
-                
-                return (
-                  <button
-                    key={npc.id}
-                    onClick={() => {
-                      setSelectedNpcId(npc.id);
-                      showNotification(`Inspecting ${npc.name}`, "info");
-                    }}
-                    className={`w-full text-left rounded-xl p-3 border transition flex items-center space-x-3 cursor-pointer ${
-                      isSelected
-                        ? "bg-slate-900/90 border-emerald-800/80 shadow-md shadow-emerald-950/10"
-                        : "bg-slate-950 border-slate-900 hover:border-slate-800 hover:bg-slate-900/30"
-                    }`}
-                  >
-                    <div className="w-12 h-12 rounded-full overflow-hidden border border-slate-800 shrink-0">
-                      <img src={npc.portrait} alt={npc.name} className="w-full h-full object-cover" />
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-sm text-slate-200 truncate">{npc.name}</span>
-                        {Icon && <Icon className={`w-3.5 h-3.5 ${isSelected ? "text-emerald-400 animate-pulse" : "text-slate-600"}`} />}
-                      </div>
-                      <p className="text-[11px] text-slate-500 truncate">{npc.role}</p>
-                      
-                      {/* Mini trust bar */}
-                      <div className="mt-1.5 w-full bg-slate-900 rounded-full h-1 relative overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            npc.metrics.trust > 70 ? "bg-emerald-500" :
-                            npc.metrics.trust < 30 ? "bg-red-500" : "bg-blue-500"
-                          }`}
-                          style={{ width: `${npc.metrics.trust}%` }}
-                        />
-                      </div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-
-            <div className="border-t border-slate-900 pt-4 mt-4">
-              <div className="bg-slate-950 border border-slate-900 rounded-xl p-3 text-xs text-slate-400">
-                <span className="font-bold text-slate-300 block mb-1">💡 Gameplay Tip</span>
-                Tell Silas a lie, but tell Kael the truth. See if Silas gossips and gets you arrested! NPCs share memories via Supermemory at day end.
-              </div>
-            </div>
-          </div>
+      {/* Bottom Banner (VA-11 Hall-A Marquee) */}
+      <div className="bg-[#00f0ff] text-[#05010b] h-6 flex items-center overflow-hidden border-t border-[#00f0ff] fixed bottom-0 left-0 w-full z-40 select-none">
+        <div className="animate-marquee-reverse inline-block font-mono text-[10px] font-bold tracking-widest uppercase">
+          ECHOES: THE VILLAGE THAT REMEMBERS • ACTIVE CONTEXT ENRICHED • BUILT WITH STITCH AND DEEPMIND AGENTS • ECHOES: THE VILLAGE THAT REMEMBERS • ACTIVE CONTEXT ENRICHED • BUILT WITH STITCH AND DEEPMIND AGENTS •
         </div>
-
-        {/* Center Panel: Dialogue Area (5 cols) */}
-        <div className="lg:col-span-5 flex flex-col space-y-4">
-          <div className="bg-slate-900/40 border border-slate-900 rounded-xl flex-1 flex flex-col overflow-hidden">
-            
-            {/* Active NPC Header */}
-            <div className="border-b border-slate-900 bg-slate-900/20 px-6 py-4 flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden border border-slate-800">
-                  <img src={selectedNpc.portrait} alt={selectedNpc.name} className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-slate-200 text-sm">{selectedNpc.name}</h3>
-                  <p className="text-xs text-emerald-400 tracking-wide">{selectedNpc.role}</p>
-                </div>
-              </div>
-
-              <span className="text-[10px] bg-slate-800 border border-slate-700 px-2.5 py-1 rounded-full font-mono text-slate-400">
-                RELATIONSHIP LOG
-              </span>
-            </div>
-
-            {/* Chat Box */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-4">
-              {conversations.length === 0 ? (
-                <div className="h-full flex flex-col items-center justify-center text-center px-6">
-                  <MessageSquare className="w-10 h-10 text-slate-700 mb-2 animate-bounce" />
-                  <p className="text-slate-500 text-sm">No words have been exchanged yet.</p>
-                  <p className="text-xs text-slate-600 max-w-xs mt-1">Speak naturally to Hagar. Tell them who you are, or ask about other villagers.</p>
-                </div>
-              ) : (
-                conversations.map((msg, i) => {
-                  const isPlayer = msg.sender === "player";
-                  return (
-                    <div 
-                      key={i} 
-                      className={`flex ${isPlayer ? "justify-end" : "justify-start"} animate-in fade-in duration-200`}
-                    >
-                      <div className={`max-w-[85%] rounded-2xl p-3.5 text-sm ${
-                        isPlayer 
-                          ? "bg-emerald-600 text-slate-950 rounded-tr-none font-medium shadow-md shadow-emerald-950/10" 
-                          : "bg-slate-900 border border-slate-800 text-slate-200 rounded-tl-none font-serif leading-relaxed"
-                      }`}>
-                        <div className="flex items-center justify-between space-x-4 mb-1">
-                          <span className={`text-[10px] font-bold tracking-wider font-mono ${
-                            isPlayer ? "text-slate-900" : "text-emerald-400"
-                          }`}>
-                            {isPlayer ? "YOU" : selectedNpc.name.toUpperCase()}
-                          </span>
-                          <span className="text-[9px] opacity-60 font-mono">{msg.timestamp}</span>
-                        </div>
-                        <p className="whitespace-pre-line">{msg.content}</p>
-                      </div>
-                    </div>
-                  );
-                })
-              )}
-              {isTalking && (
-                <div className="flex justify-start">
-                  <div className="bg-slate-900 border border-slate-800 rounded-2xl rounded-tl-none p-3 max-w-[85%] flex items-center space-x-3">
-                    <Loader2 className="w-4 h-4 text-emerald-500 animate-spin" />
-                    <span className="text-slate-400 text-xs font-mono">Thinking...</span>
-                  </div>
-                </div>
-              )}
-              <div ref={chatEndRef} />
-            </div>
-
-            {/* Input Bar */}
-            <form onSubmit={handleSendMessage} className="border-t border-slate-900 p-4 bg-slate-950/60">
-              <div className="flex space-x-3">
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder={`Speak to ${selectedNpc.name}... (e.g., 'I am a brave knight' or 'Silas told me a secret')`}
-                  disabled={isTalking || state.gameEnded}
-                  className="flex-1 bg-slate-900/90 border border-slate-800 hover:border-slate-700 focus:border-emerald-500 rounded-xl px-4 py-3 text-sm text-slate-200 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-emerald-500 transition disabled:opacity-50"
-                />
-                <button
-                  type="submit"
-                  disabled={!inputValue.trim() || isTalking || state.gameEnded}
-                  className="bg-emerald-500 hover:bg-emerald-400 disabled:opacity-40 text-slate-950 font-bold px-5 py-3 rounded-xl text-sm transition flex items-center space-x-1.5 cursor-pointer shrink-0"
-                >
-                  <span>SPEAK</span>
-                  <ChevronRight className="w-4 h-4" />
-                </button>
-              </div>
-            </form>
-
-          </div>
-        </div>
-
-        {/* Right Panel: Village Mind (4 cols) */}
-        <div className="lg:col-span-4 flex flex-col space-y-4">
-          
-          {/* Ending State Overlay */}
-          {state.gameEnded && (
-            <div className="bg-red-950/20 border-2 border-red-800/80 rounded-xl p-6 text-center relative overflow-hidden shadow-xl animate-pulse">
-              <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-red-600 to-orange-600" />
-              <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-3" />
-              
-              <h3 className="text-xl font-bold font-mono tracking-widest text-red-400 uppercase">
-                {state.endingType === "arrested" && "GAME OVER: ARRESTED"}
-                {state.endingType === "outcast" && "GAME OVER: OUTCAST"}
-                {state.endingType === "mayor" && "VICTORY: VILLAGE LEADER"}
-                {state.endingType === "merchant" && "VICTORY: MERCHANT KINGPIN"}
-                {state.endingType === "friend" && "VICTORY: EVERYONE'S FRIEND"}
-              </h3>
-              
-              <p className="text-sm text-slate-300 mt-2 leading-relaxed font-serif italic">
-                {state.endingType === "arrested" && "Your lies caught up with you. Captain Kael found a contradiction in your stories, declared you a liar and a spy, and locked you in the dungeon forever."}
-                {state.endingType === "outcast" && "Rumors of your inconsistencies and shifty behavior spread like wildfire. Nobody trusts you, and they have driven you out of Echoes."}
-                {state.endingType === "mayor" && "Through charisma, honesty, and strategic alliances, Mayor Evelyn trust you entirely and has appointed you as the new leader of the village."}
-                {state.endingType === "merchant" && "Silas loved your business secrets. You've established a trade monopoly and become the richest merchant partner in Echoes."}
-                {state.endingType === "friend" && "Your warmth, helpfulness, and consistent honesty made you a legend in Echoes. The village welcomes you as one of their own."}
-              </p>
-
-              <button
-                onClick={handleResetGame}
-                className="mt-5 bg-red-800 hover:bg-red-700 text-white font-mono text-xs tracking-wider px-6 py-2.5 rounded-lg transition"
-              >
-                PLAY AGAIN
-              </button>
-            </div>
-          )}
-
-          {/* Tab selectors */}
-          <div className="flex bg-slate-900 border border-slate-900 rounded-xl p-1 shrink-0">
-            <button
-              onClick={() => setActiveRightTab("mind")}
-              className={`flex-1 flex items-center justify-center space-x-1.5 py-2 text-xs font-mono rounded-lg transition cursor-pointer ${
-                activeRightTab === "mind" 
-                  ? "bg-slate-800 text-emerald-400 font-bold" 
-                  : "text-slate-500 hover:text-slate-300"
-              }`}
-            >
-              <Activity className="w-3.5 h-3.5" />
-              <span>VILLAGE MIND</span>
-            </button>
-            <button
-              onClick={() => setActiveRightTab("memories")}
-              className={`flex-1 flex items-center justify-center space-x-1.5 py-2 text-xs font-mono rounded-lg transition cursor-pointer ${
-                activeRightTab === "memories" 
-                  ? "bg-slate-800 text-emerald-400 font-bold" 
-                  : "text-slate-500 hover:text-slate-300"
-              }`}
-            >
-              <BookOpen className="w-3.5 h-3.5" />
-              <span>AI MEMORY VAULT</span>
-            </button>
-          </div>
-
-          {activeRightTab === "mind" ? (
-            /* Village Mind Panel */
-            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-4 flex-1 flex flex-col">
-              <h2 className="text-xs font-bold tracking-widest text-slate-500 font-mono mb-2 uppercase">SOCIAL DYNAMICS</h2>
-              
-              {/* SVG Relationship Graph */}
-              <div className="flex-1 bg-slate-950 rounded-xl border border-slate-900 relative overflow-hidden flex items-center justify-center min-h-[300px]">
-                
-                {/* Background Grid */}
-                <div className="absolute inset-0 bg-[linear-gradient(to_right,#090d16_1px,transparent_1px),linear-gradient(to_bottom,#090d16_1px,transparent_1px)] bg-[size:16px_16px] pointer-events-none opacity-40" />
-
-                <svg className="w-full h-full absolute inset-0" viewBox="0 0 400 400">
-                  <defs>
-                    <marker id="arrow" viewBox="0 0 10 10" refX="15" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#047857" />
-                    </marker>
-                    <marker id="gossip-arrow" viewBox="0 0 10 10" refX="15" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
-                      <path d="M 0 0 L 10 5 L 0 10 z" fill="#818cf8" />
-                    </marker>
-                  </defs>
-
-                  {/* 1. Permanent Social Bonds */}
-                  {/* Blacksmith <-> Guard */}
-                  <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.guard.x} y2={nodeCoordinates.guard.y} stroke="#1e293b" strokeWidth="2" strokeDasharray="3,3" />
-                  
-                  {/* Blacksmith <-> Merchant */}
-                  <line x1={nodeCoordinates.blacksmith.x} y1={nodeCoordinates.blacksmith.y} x2={nodeCoordinates.merchant.x} y2={nodeCoordinates.merchant.y} stroke="#311" strokeWidth="2" />
-                  
-                  {/* Guard <-> Mayor */}
-                  <line x1={nodeCoordinates.guard.x} y1={nodeCoordinates.guard.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#1e293b" strokeWidth="2" strokeDasharray="3,3" />
-                  
-                  {/* Merchant <-> Mayor */}
-                  <line x1={nodeCoordinates.merchant.x} y1={nodeCoordinates.merchant.y} x2={nodeCoordinates.mayor.x} y2={nodeCoordinates.mayor.y} stroke="#1e293b" strokeWidth="2" strokeDasharray="3,3" />
-
-                  {/* 2. Active Player Trust Bonds (glowing colored lines) */}
-                  {Object.entries(state.npcs).map(([id, npc]) => {
-                    const coords = nodeCoordinates[id];
-                    const playerCoords = nodeCoordinates.player;
-                    const trustPercent = npc.metrics.trust / 100;
-                    
-                    // Color based on trust
-                    const strokeColor = 
-                      npc.metrics.trust > 70 ? "rgba(16,185,129,0.4)" :
-                      npc.metrics.trust < 30 ? "rgba(239,68,68,0.4)" : 
-                      "rgba(59,130,246,0.3)";
-
-                    return (
-                      <g key={id}>
-                        <line 
-                          x1={playerCoords.x} 
-                          y1={playerCoords.y} 
-                          x2={coords.x} 
-                          y2={coords.y} 
-                          stroke={strokeColor} 
-                          strokeWidth={2 + trustPercent * 3}
-                          markerEnd="url(#arrow)"
-                        />
-                        {/* Trust text on the lines */}
-                        <text 
-                          x={(playerCoords.x + coords.x) / 2} 
-                          y={(playerCoords.y + coords.y) / 2 - 5}
-                          fill={npc.metrics.trust > 70 ? "#10b981" : npc.metrics.trust < 30 ? "#ef4444" : "#3b82f6"}
-                          fontSize="9"
-                          fontFamily="monospace"
-                          textAnchor="middle"
-                        >
-                          T:{npc.metrics.trust}
-                        </text>
-                      </g>
-                    );
-                  })}
-
-                  {/* 3. Render Nodes */}
-                  {/* Player Node */}
-                  <g className="cursor-pointer">
-                    <circle cx={nodeCoordinates.player.x} cy={nodeCoordinates.player.y} r="16" fill="#1e293b" stroke="#10b981" strokeWidth="2" />
-                    <User className="w-5 h-5 text-emerald-400 absolute" style={{ 
-                      left: nodeCoordinates.player.x - 10, 
-                      top: nodeCoordinates.player.y - 10,
-                      transform: 'translate(4px, 4px)'
-                    }} />
-                    <text x={nodeCoordinates.player.x} y={nodeCoordinates.player.y + 26} fill="#10b981" fontSize="9" fontFamily="monospace" textAnchor="middle" fontWeight="bold">PLAYER</text>
-                  </g>
-
-                  {/* NPC Nodes */}
-                  {Object.entries(state.npcs).map(([id, npc]) => {
-                    const coords = nodeCoordinates[id];
-                    const isSelected = selectedNpcId === id;
-                    
-                    return (
-                      <g 
-                        key={id} 
-                        className="cursor-pointer"
-                        onClick={() => setSelectedNpcId(id)}
-                      >
-                        <circle 
-                          cx={coords.x} 
-                          cy={coords.y} 
-                          r="20" 
-                          fill="#0f172a" 
-                          stroke={isSelected ? "#10b981" : "#1e293b"} 
-                          strokeWidth={isSelected ? "3" : "1.5"} 
-                        />
-                        <foreignObject 
-                          x={coords.x - 16} 
-                          y={coords.y - 16} 
-                          width="32" 
-                          height="32" 
-                          className="rounded-full overflow-hidden"
-                        >
-                          <img src={npc.portrait} alt={npc.name} className="w-full h-full object-cover" />
-                        </foreignObject>
-                        <text 
-                          x={coords.x} 
-                          y={coords.y + 32} 
-                          fill={isSelected ? "#10b981" : "#94a3b8"} 
-                          fontSize="9" 
-                          fontFamily="monospace" 
-                          textAnchor="middle"
-                        >
-                          {npc.name.toUpperCase()}
-                        </text>
-                      </g>
-                    );
-                  })}
-                </svg>
-              </div>
-
-              {/* Metrics block for selected NPC */}
-              <div className="bg-slate-950 border border-slate-900 rounded-xl p-4 mt-4 space-y-3">
-                <div className="flex items-center space-x-2">
-                  <div className="w-8 h-8 rounded-full overflow-hidden border border-slate-800">
-                    <img src={selectedNpc.portrait} alt={selectedNpc.name} className="w-full h-full object-cover" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs font-bold text-slate-300 tracking-wider font-mono">{selectedNpc.name.toUpperCase()}&rsquo;S STANDING</h4>
-                    <p className="text-[10px] text-slate-500 font-serif italic">{selectedNpc.relationships}</p>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3 pt-2">
-                  <div className="bg-slate-900/60 border border-slate-900 rounded-lg p-2.5 flex items-center space-x-2.5">
-                    <ThumbsUp className="w-4 h-4 text-emerald-500 shrink-0" />
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-mono">TRUST</span>
-                      <span className="text-sm font-bold font-mono text-slate-200">{selectedNpc.metrics.trust}%</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900/60 border border-slate-900 rounded-lg p-2.5 flex items-center space-x-2.5">
-                    <Award className="w-4 h-4 text-blue-500 shrink-0" />
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-mono">RESPECT</span>
-                      <span className="text-sm font-bold font-mono text-slate-200">{selectedNpc.metrics.respect}%</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900/60 border border-slate-900 rounded-lg p-2.5 flex items-center space-x-2.5">
-                    <Flame className="w-4 h-4 text-orange-500 shrink-0" />
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-mono">FEAR</span>
-                      <span className="text-sm font-bold font-mono text-slate-200">{selectedNpc.metrics.fear}%</span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-900/60 border border-slate-900 rounded-lg p-2.5 flex items-center space-x-2.5">
-                    <Heart className="w-4 h-4 text-pink-500 shrink-0" />
-                    <div>
-                      <span className="text-[9px] text-slate-500 block font-mono">FRIENDSHIP</span>
-                      <span className="text-sm font-bold font-mono text-slate-200">{selectedNpc.metrics.friendship}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-          ) : (
-            /* Stored Memories Vault (Supermemory inspector) */
-            <div className="bg-slate-900/40 border border-slate-900 rounded-xl p-4 flex-1 flex flex-col overflow-hidden">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xs font-bold tracking-widest text-slate-500 font-mono uppercase">NPC MEMORIES</h2>
-                {loadingMemories && <Loader2 className="w-3.5 h-3.5 text-emerald-400 animate-spin" />}
-              </div>
-
-              <div className="flex-1 bg-slate-950 rounded-xl border border-slate-900 overflow-y-auto p-4 space-y-4">
-                
-                <div className="flex items-center space-x-2 border-b border-slate-900 pb-2">
-                  <div className="w-6 h-6 rounded-full overflow-hidden border border-slate-800">
-                    <img src={selectedNpc.portrait} alt={selectedNpc.name} className="w-full h-full object-cover" />
-                  </div>
-                  <span className="text-xs text-slate-300 font-bold">{selectedNpc.name} holds {npcMemories[selectedNpcId]?.length || 0} memories:</span>
-                </div>
-
-                {npcMemories[selectedNpcId] && npcMemories[selectedNpcId].length > 0 ? (
-                  <ul className="space-y-2.5">
-                    {npcMemories[selectedNpcId].map((mem, index) => (
-                      <li 
-                        key={index}
-                        className="bg-slate-900/60 border border-slate-850 rounded-lg p-3 text-xs leading-relaxed text-slate-300 font-serif border-l-2 border-l-emerald-500 hover:bg-slate-900 transition"
-                      >
-                        {mem}
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  <div className="h-full flex flex-col items-center justify-center text-center p-6">
-                    <BookOpen className="w-8 h-8 text-slate-800 mb-2" />
-                    <p className="text-slate-600 text-xs">No stored facts in {selectedNpc.name}&rsquo;s mind.</p>
-                    <p className="text-[10px] text-slate-700 max-w-xs mt-1">Talk to them or advance the day to spread gossip and seed memories.</p>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-slate-900 pt-3 mt-3 flex items-center justify-between text-[10px] text-slate-500">
-                <span>NAMESPACE: <code className="text-emerald-500 font-mono">{selectedNpcId}_{state.sessionId}</code></span>
-                <button 
-                  onClick={() => fetchMemories(state.sessionId)}
-                  className="hover:text-white transition flex items-center space-x-1 font-mono uppercase tracking-wider"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>REFRESH VAULT</span>
-                </button>
-              </div>
-            </div>
-          )}
-
-        </div>
-
       </div>
 
     </div>
