@@ -136,7 +136,7 @@ export default function GamePage() {
   const [mouseOffset, setMouseOffset] = useState({ x: 0, y: 0 });
   const [landingScreenActive, setLandingScreenActive] = useState<boolean>(true);
   const [musicPlaying, setMusicPlaying] = useState<boolean>(false);
-  const synthRef = useRef<any>(null);
+  const bgAudioRef = useRef<HTMLAudioElement | null>(null);
   const [helpModeActive, setHelpModeActive] = useState<boolean>(false);
   const [activeHelpSection, setActiveHelpSection] = useState<string | null>(null);
   
@@ -200,16 +200,20 @@ export default function GamePage() {
   // Start music helper
   const toggleMusic = () => {
     if (musicPlaying) {
-      if (synthRef.current) {
-        synthRef.current.stop();
+      if (bgAudioRef.current) {
+        bgAudioRef.current.pause();
       }
       setMusicPlaying(false);
       showNotification("AMBIENT TRANSMISSION PAUSED", "info");
     } else {
-      if (!synthRef.current) {
-        synthRef.current = new JRPGSynth();
+      if (!bgAudioRef.current) {
+        bgAudioRef.current = new Audio("/kaazoom-kitsune-funk-full-version-japanese-392355.mp3");
+        bgAudioRef.current.loop = true;
+        bgAudioRef.current.volume = 0.25;
       }
-      synthRef.current.start();
+      bgAudioRef.current.play().catch(err => {
+        console.error("Audio playback failed:", err);
+      });
       setMusicPlaying(true);
       showNotification("AMBIENT TRANSMISSION ESTABLISHED", "success");
     }
@@ -217,8 +221,8 @@ export default function GamePage() {
 
   useEffect(() => {
     return () => {
-      if (synthRef.current) {
-        synthRef.current.stop();
+      if (bgAudioRef.current) {
+        bgAudioRef.current.pause();
       }
     };
   }, []);
