@@ -761,7 +761,7 @@ export default function GamePage() {
         </div>
 
         {/* Header Bar */}
-        <div className="w-full max-w-5xl flex justify-between items-center border-b-2 border-[#38251b]/40 pb-3 z-10 text-[9px] font-bold text-[#855b32] uppercase">
+        <div className="w-full max-w-5xl flex justify-between items-center border-b-2 border-[#38251b]/40 pb-3 z-10 text-xs md:text-sm font-bold text-[#855b32] uppercase">
           <span>VILLAGE_LOG: SESSION_{state?.sessionId?.slice(0, 8) || "ACTIVE"}</span>
           <span>CHRONICLE RESTORATION CORE v1.4.0</span>
         </div>
@@ -776,10 +776,10 @@ export default function GamePage() {
         >
           
           {/* Main Title Banner */}
-          <div className="flex flex-col items-center">
+          <div className="flex flex-col items-center w-full">
             {/* Mascot Memo greeting in JRPG card style */}
-            <div className="flex items-center gap-3 bg-[#ebdcb9] border-4 border-[#38251b] rounded-lg p-3 max-w-md mb-4 shadow-[4px_4px_0px_#38251b] relative">
-              <div className="w-12 h-12 rounded overflow-hidden border-2 border-[#38251b] bg-[#38251b] shrink-0 relative">
+            <div className="flex items-center gap-4 bg-[#ebdcb9] border-4 border-[#38251b] rounded-lg p-4 max-w-lg mb-6 shadow-[4px_4px_0px_#38251b] relative w-full">
+              <div className="w-16 h-16 rounded overflow-hidden border-2 border-[#38251b] bg-[#38251b] shrink-0 relative">
                 <img 
                   src="/portraits/mascot.png" 
                   alt="Memo" 
@@ -787,8 +787,8 @@ export default function GamePage() {
                 />
               </div>
               <div className="text-left">
-                <div className="text-[9px] font-bold text-[#a84424] uppercase tracking-wider mb-0.5">MEMO (VILLAGE GUIDE)</div>
-                <p className="text-[9px] text-[#4a3b2c] leading-relaxed font-mono font-medium">
+                <div className="text-xs md:text-sm font-bold text-[#a84424] uppercase tracking-wider mb-1">MEMO (VILLAGE GUIDE)</div>
+                <p className="text-xs md:text-sm text-[#4a3b2c] leading-relaxed font-mono font-medium">
                   &ldquo;A contradiction has fractured the chronicles! Establish BGM audio connection and let us restore the timeline.&rdquo;
                 </p>
               </div>
@@ -801,7 +801,7 @@ export default function GamePage() {
             >
               E C H O E S
             </h1>
-            <p className="text-[10px] uppercase tracking-[0.3em] text-[#855b32] font-mono mt-3 font-bold">
+            <p className="text-xs md:text-sm uppercase tracking-[0.3em] text-[#855b32] font-mono mt-3 font-bold">
               Cognitive Restoration & Memory Vector Intrusion
             </p>
           </div>
@@ -813,7 +813,7 @@ export default function GamePage() {
             <button
               type="button"
               onClick={toggleMusic}
-              className={`w-full sm:w-auto font-mono text-[10px] px-5 py-3 border-2 border-[#38251b] rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-2 shadow-[2px_2px_0px_#38251b] active:translate-y-0.5 ${
+              className={`w-full sm:w-auto font-mono text-xs md:text-sm px-6 py-3.5 border-2 border-[#38251b] rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-2 shadow-[2px_2px_0px_#38251b] active:translate-y-0.5 ${
                 musicPlaying 
                   ? "bg-emerald-800 text-emerald-100 hover:bg-emerald-750 font-bold"
                   : "bg-[#ebdcb9] hover:bg-[#e6d0a1] text-[#382c22]"
@@ -834,15 +834,15 @@ export default function GamePage() {
                 }
                 setLandingScreenActive(false);
               }}
-              className="w-full sm:w-auto bg-[#a84424] hover:bg-[#c2512f] text-amber-100 font-mono text-[10px] tracking-widest px-8 py-3 border-2 border-[#38251b] shadow-[4px_4px_0px_#38251b] hover:shadow-[6px_6px_0px_#38251b] transition-all duration-150 cursor-pointer font-bold uppercase active:translate-y-1 active:shadow-[2px_2px_0px_#38251b]"
+              className="w-full sm:w-auto bg-[#a84424] hover:bg-[#c2512f] text-amber-100 font-mono text-xs md:text-sm tracking-widest px-8 py-3.5 border-2 border-[#38251b] shadow-[4px_4px_0px_#38251b] hover:shadow-[6px_6px_0px_#38251b] transition-all duration-150 cursor-pointer font-bold uppercase active:translate-y-1 active:shadow-[2px_2px_0px_#38251b]"
             >
               [⚡ RESTORE CHRONICLE]
             </button>
           </div>
 
           {/* System logs widget in parchment style */}
-          <div className="w-full bg-[#ebdcb9]/80 border-2 border-[#38251b] rounded p-3.5 text-left text-[9px] text-[#5c4033] font-mono flex flex-col gap-1 shadow-[4px_4px_0px_#38251b] max-w-md">
-            <div className="border-b border-[#38251b]/30 pb-1 mb-1 font-bold text-[#a84424] uppercase flex justify-between">
+          <div className="w-full bg-[#ebdcb9]/80 border-2 border-[#38251b] rounded p-4 text-left text-xs md:text-sm text-[#5c4033] font-mono flex flex-col gap-1.5 shadow-[4px_4px_0px_#38251b] max-w-md">
+            <div className="border-b border-[#38251b]/30 pb-1.5 mb-1.5 font-bold text-[#a84424] uppercase flex justify-between">
               <span>SYSTEM DIAGNOSTIC</span>
               <span className="animate-pulse">● COGNITIVE CORE ONLINE</span>
             </div>
@@ -854,7 +854,7 @@ export default function GamePage() {
         </div>
 
         {/* Footer */}
-        <div className="w-full max-w-5xl flex justify-between items-center border-t-2 border-[#38251b]/40 pt-3 z-10 text-[9px] font-bold text-[#855b32]">
+        <div className="w-full max-w-5xl flex justify-between items-center border-t-2 border-[#38251b]/40 pt-3 z-10 text-xs md:text-sm font-bold text-[#855b32]">
           <span>AUTHENTICATED INTRUDER PROTOCOL</span>
           <span>© 2026 ECHOSYSTEMS</span>
         </div>
@@ -960,17 +960,17 @@ export default function GamePage() {
             transition: 'transform 0.12s ease-out'
           }}
         >
-          <div className="absolute top-2 left-3 font-mono text-[9px] text-[#855b32]">TUTORIAL_GUIDE_v1.3.0</div>
-          <div className="absolute top-2 right-3 font-mono text-[9px] text-[#855b32] animate-pulse">● MEMO CONNECTION ONLINE</div>
+          <div className="absolute top-2 left-3 font-mono text-xs text-[#855b32]">TUTORIAL_GUIDE_v1.3.0</div>
+          <div className="absolute top-2 right-3 font-mono text-xs text-[#855b32] animate-pulse">● MEMO CONNECTION ONLINE</div>
 
           {/* Tutorial Steps Progress Bar */}
-          <div className="flex justify-between items-center bg-[#38251b] px-4 py-2 rounded border border-[#5c4033] mt-2 shrink-0">
-            <span className="font-mono text-[10px] font-bold text-amber-300">TUTORIAL GUIDE PHASE</span>
-            <div className="flex items-center space-x-1.5">
+          <div className="flex justify-between items-center bg-[#38251b] px-4 py-2.5 rounded border border-[#5c4033] mt-2 shrink-0">
+            <span className="font-mono text-xs font-bold text-amber-300">TUTORIAL GUIDE PHASE</span>
+            <div className="flex items-center space-x-2">
               {[1, 2, 3, 4].map((step) => (
                 <div
                   key={step}
-                  className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center font-mono text-[8px] font-bold transition-all ${
+                  className={`w-5 h-5 rounded-full border flex items-center justify-center font-mono text-xs font-bold transition-all ${
                     onboardingStep === step
                       ? "bg-amber-500 border-amber-300 text-slate-900 scale-110"
                       : onboardingStep > step
@@ -994,7 +994,7 @@ export default function GamePage() {
                 alt="Memo the AI assistant owl" 
                 className="w-full h-full object-cover pixelated" 
               />
-              <div className="absolute bottom-1 bg-black/80 px-1.5 py-0.5 rounded text-[8px] font-mono text-[#00f0ff] font-bold tracking-widest uppercase">
+              <div className="absolute bottom-1 bg-black/80 px-2 py-0.5 rounded text-[10px] font-mono text-[#00f0ff] font-bold tracking-widest uppercase">
                 MEMO
               </div>
             </div>
@@ -1005,50 +1005,50 @@ export default function GamePage() {
               <div className="hidden md:block absolute left-[-8px] top-10 w-0 h-0 border-y-8 border-y-transparent border-r-8 border-r-[#6b533e]/30" />
               <div className="hidden md:block absolute left-[-6px] top-10 w-0 h-0 border-y-8 border-y-transparent border-r-8 border-r-[#fcf8ef]" />
 
-              <div className="font-mono text-xs leading-relaxed text-[#382c22]">
+              <div className="font-mono text-sm md:text-base leading-relaxed text-[#382c22]">
                 {onboardingStep === 1 && (
                   <>
-                    <p className="mb-2.5">
-                      <strong className="text-[#a84424] text-sm font-bold block mb-1">WELCOME TO THE ECHOES MATRIX!</strong>
+                    <div className="mb-2.5">
+                      <strong className="text-[#a84424] text-base font-bold block mb-1">WELCOME TO THE ECHOES MATRIX!</strong>
                       Greetings, Traveler! I am <strong className="text-amber-900">Memo</strong>, your personal cognitive digital owl. I will guide you through this strange village.
-                    </p>
-                    <p>
+                    </div>
+                    <div>
                       In Echoes, the inhabitants share a unified memory database. You must be careful with what stories you weave, or their database will detect contradictions!
-                    </p>
+                    </div>
                   </>
                 )}
 
                 {onboardingStep === 2 && (
                   <>
-                    <p className="mb-2.5">
-                      <strong className="text-[#a84424] text-sm font-bold block mb-1">THE MEMORY TRAP & RELATIONSHIPS</strong>
+                    <div className="mb-2.5">
+                      <strong className="text-[#a84424] text-base font-bold block mb-1">THE MEMORY TRAP & RELATIONSHIPS</strong>
                       Every word you type to an NPC is parsed, analyzed, and ingested into their personal Supermemory vector tags.
-                    </p>
-                    <p>
+                    </div>
+                    <div>
                       If you tell Hagar you are a <strong>knight</strong> but Silas thinks you are a <strong>peasant</strong>, they will treat you with suspicion! Watch out for the metrics in your relation matrix: <strong className="text-amber-900">Trust, Respect, Fear, and Friendship</strong>.
-                    </p>
+                    </div>
                   </>
                 )}
 
                 {onboardingStep === 3 && (
                   <>
-                    <p className="mb-2.5">
-                      <strong className="text-[#a84424] text-sm font-bold block mb-1">CAMPFIRE GOSSIP NIGHT</strong>
+                    <div className="mb-2.5">
+                      <strong className="text-[#a84424] text-base font-bold block mb-1">CAMPFIRE GOSSIP NIGHT</strong>
                       At the end of each day, when you click the <strong className="text-[#a84424]">SLEEP</strong> button, the campfire gossip night triggers.
-                    </p>
-                    <p>
+                    </div>
+                    <div>
                       NPCs gather at the inn to exchange rumors they've logged about you. If Silas knows a trade secret, he might sell it to Mayor Evelyn. Facts propagate!
-                    </p>
+                    </div>
                   </>
                 )}
 
                 {onboardingStep === 4 && (
                   <>
-                    <p className="mb-2.5">
-                      <strong className="text-[#a84424] text-sm font-bold block mb-1">YOUR EXTRAPOLATED TOOLS</strong>
+                    <div className="mb-2.5">
+                      <strong className="text-[#a84424] text-base font-bold block mb-1">YOUR EXTRAPOLATED TOOLS</strong>
                       To survive, I have built special interfaces for you:
-                    </p>
-                    <ul className="space-y-1.5 mt-2 text-[10px] list-disc pl-4 text-stone-750">
+                    </div>
+                    <ul className="space-y-1.5 mt-2 text-xs md:text-sm list-disc pl-4 text-stone-750">
                       <li><strong>✏️ My Journal:</strong> Write down your covers so you never contradict yourself.</li>
                       <li><strong className="text-purple-800">🔮 Vector Hacking (5 coins):</strong> Query an NPC's memory space for keywords.</li>
                       <li><strong className="text-emerald-800">🧪 Oblivion Potion (20 coins):</strong> Permanently wipe any dangerous fact before it spreads!</li>
@@ -1066,7 +1066,7 @@ export default function GamePage() {
               <button
                 type="button"
                 onClick={() => setOnboardingStep((prev) => prev - 1)}
-                className="bg-[#ebdcb9] hover:bg-stone-300 text-stone-800 border-2 border-[#38251b] font-mono text-[10px] font-bold px-4 py-2 rounded cursor-pointer transition shadow"
+                className="bg-[#ebdcb9] hover:bg-stone-300 text-stone-800 border-2 border-[#38251b] font-mono text-xs md:text-sm font-bold px-5 py-2.5 rounded cursor-pointer transition shadow"
               >
                 [BACK]
               </button>
@@ -1078,7 +1078,7 @@ export default function GamePage() {
               <button
                 type="button"
                 onClick={() => setOnboardingStep((prev) => prev + 1)}
-                className="bg-[#855b32] hover:bg-[#a87442] text-amber-100 border-2 border-[#38251b] font-mono text-[10px] font-bold px-5 py-2 rounded cursor-pointer transition shadow"
+                className="bg-[#855b32] hover:bg-[#a87442] text-amber-100 border-2 border-[#38251b] font-mono text-xs md:text-sm font-bold px-6 py-2.5 rounded cursor-pointer transition shadow"
               >
                 [NEXT PHASE]
               </button>
@@ -1089,7 +1089,7 @@ export default function GamePage() {
                   setShowOnboarding(false);
                   showNotification("COGNITIVE CONNECTION STABILIZED. WELCOME TO ECHOES.", "success");
                 }}
-                className="bg-emerald-800 hover:bg-emerald-750 text-emerald-100 border-4 border-[#38251b] font-mono text-xs font-bold tracking-widest px-6 py-2.5 rounded cursor-pointer transition shadow-lg inline-flex items-center space-x-2 select-none animate-pulse hover:animate-none"
+                className="bg-emerald-800 hover:bg-emerald-750 text-emerald-100 border-4 border-[#38251b] font-mono text-sm md:text-base font-bold tracking-widest px-6 py-3 rounded cursor-pointer transition shadow-lg inline-flex items-center space-x-2 select-none animate-pulse hover:animate-none"
               >
                 <span>[ENTER ECHOES VILLAGE]</span>
                 <ChevronRight className="w-4 h-4" />
