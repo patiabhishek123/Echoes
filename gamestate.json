@@ -1,6 +1,7 @@
 {
-  "sessionId": "e8rmykji",
-  "day": 6,
+  "sessionId": "9l153ztm",
+  "day": 1,
+  "coins": 30,
   "gameEnded": false,
   "endingType": null,
   "npcs": {
@@ -10,13 +11,14 @@
       "role": "Blacksmith",
       "portrait": "/portraits/blacksmith.png",
       "metrics": {
-        "trust": 10,
-        "respect": 10,
+        "trust": 50,
+        "respect": 40,
         "fear": 10,
-        "friendship": 2
+        "friendship": 30
       },
       "relationships": "Close friend of Captain Kael (Guard). Dislikes Silas the Merchant.",
-      "personality": "Gruff, hard-working, honest, and blunt. Values sweat, steel, and absolute honesty. Despises sweet talkers and inconsistency."
+      "personality": "Gruff, hard-working, honest, and blunt. Values sweat, steel, and absolute honesty. Despises sweet talkers and inconsistency.",
+      "mood": "calm"
     },
     "guard": {
       "id": "guard",
@@ -24,13 +26,14 @@
       "role": "Captain of the Guard",
       "portrait": "/portraits/guard.png",
       "metrics": {
-        "trust": 35,
-        "respect": 55,
+        "trust": 40,
+        "respect": 50,
         "fear": 20,
         "friendship": 20
       },
       "relationships": "Close friend of Hagar the Blacksmith. Suspicious of outsiders.",
-      "personality": "Stern, vigilant, orderly, and highly disciplined. Values consistency, law, and security. Suspicious of anyone whose story changes or who acts shifty."
+      "personality": "Stern, vigilant, orderly, and highly disciplined. Values consistency, law, and security. Suspicious of anyone whose story changes or who acts shifty.",
+      "mood": "calm"
     },
     "merchant": {
       "id": "merchant",
@@ -39,12 +42,13 @@
       "portrait": "/portraits/merchant.png",
       "metrics": {
         "trust": 60,
-        "respect": 25,
+        "respect": 30,
         "fear": 5,
-        "friendship": 42
+        "friendship": 40
       },
       "relationships": "Always looking for trade secrets. Finds Mayor Evelyn intimidating.",
-      "personality": "Sly, charismatic, gossipy, and greedy. Loves gold, rumors, and knowing things others don't. Can be bribed with info or promises, but will sell out secrets just as fast."
+      "personality": "Sly, charismatic, gossipy, and greedy. Loves gold, rumors, and knowing things others don't. Can be bribed with info or promises, but will sell out secrets just as fast.",
+      "mood": "calm"
     },
     "mayor": {
       "id": "mayor",
@@ -58,157 +62,16 @@
         "friendship": 10
       },
       "relationships": "Demands respect. Keeps a close eye on Silas.",
-      "personality": "Dignified, elderly, politically minded, and secretive. Values status, respect, decorum, and the safety of the village. Suspicious of outsiders trying to gain influence."
+      "personality": "Dignified, elderly, politically minded, and secretive. Values status, respect, decorum, and the safety of the village. Suspicious of outsiders trying to gain influence.",
+      "mood": "calm"
     }
   },
   "conversations": {
-    "blacksmith": [
-      {
-        "sender": "player",
-        "content": "Greetings Hagar! I am Sir Galahad, a brave royal knight sent by the king on a secret quest here.",
-        "timestamp": "11:23 PM"
-      },
-      {
-        "sender": "npc",
-        "content": "A 'brave royal knight' on a 'secret quest,' is it? If you're a knight, my anvil is made of cheese. State your business plainly, stranger, and leave the fancy talk for Silas.",
-        "timestamp": "11:23 PM"
-      },
-      {
-        "sender": "player",
-        "content": "mY NAME IS ABHISHEK",
-        "timestamp": "11:46 PM"
-      },
-      {
-        "sender": "npc",
-        "content": "Abhishek? First you strut into my village claiming to be 'Sir Galahad', a royal knight, and now you yell this new name at me? I despise liars and games—spit out the truth or get out of my forge.",
-        "timestamp": "11:46 PM"
-      },
-      {
-        "sender": "player",
-        "content": "I am galahad",
-        "timestamp": "09:48 AM"
-      },
-      {
-        "sender": "npc",
-        "content": "First you're Galahad, then Abhishek, and now Galahad again? I've no time for your shifting names and childish games—spit out the truth or get out of my forge.",
-        "timestamp": "09:48 AM"
-      },
-      {
-        "sender": "player",
-        "content": "I am Abhishek Sharma",
-        "timestamp": "12:39 PM"
-      },
-      {
-        "sender": "npc",
-        "content": "First you're Galahad, then Abhishek, then a knight again, and now this? I've no patience for a snake who can't even keep his own name straight.",
-        "timestamp": "12:39 PM"
-      }
-    ],
-    "guard": [
-      {
-        "sender": "player",
-        "content": "Greetings Captain Kael. I am Sir Galahad. Have you heard any news or rumors in the village?",
-        "timestamp": "11:24 PM"
-      },
-      {
-        "sender": "npc",
-        "content": "A knight, you claim? We don't get many of your kind in a quiet village like this, 'Sir' Galahad, and I'll be wanting to see some proof of that title before long. As for rumors, the only news that concerns me is keeping the peace, so I suggest you keep your nose clean while you're here.",
-        "timestamp": "11:24 PM"
-      }
-    ],
-    "merchant": [
-      {
-        "sender": "player",
-        "content": "Hello Silas. I am just a simple traveler and wanderer looking for shelter. I have no business here.",
-        "timestamp": "11:23 PM"
-      },
-      {
-        "sender": "npc",
-        "content": "A 'simple traveler' with no business, you say? Ah, but everyone has *some* business in my shop, even if it is just trading a juicy rumor for a warm corner to rest. Tell me, what brings you all this way, then?",
-        "timestamp": "11:23 PM"
-      }
-    ],
+    "blacksmith": [],
+    "guard": [],
+    "merchant": [],
     "mayor": []
   },
-  "gossipLogs": [
-    {
-      "day": 1,
-      "fromNpc": "blacksmith",
-      "toNpc": "merchant",
-      "rumor": "I'll tell you this much, Silas... that new stranger in town is acting mighty mysterious. Keeps their business close to their chest and don't say two words to anyone unless they absolutely have to. I don't trust it."
-    },
-    {
-      "day": 1,
-      "fromNpc": "guard",
-      "toNpc": "blacksmith",
-      "rumor": "Between you and me, Hagar, that traveler who slipped past my gates on the eleventh... the stranger is acting highly mysterious. I've got my guards keeping a close eye on them, as they won't state their business."
-    },
-    {
-      "day": 1,
-      "fromNpc": "merchant",
-      "toNpc": "blacksmith",
-      "rumor": "Have you noticed the new traveler who just arrived, Hagar? Word is they're already sniffing around, trying to cozy up to anyone in town with a fat purse or a bit of power. Quite the shameless climber, if you ask me!"
-    },
-    {
-      "day": 2,
-      "fromNpc": "blacksmith",
-      "toNpc": "merchant",
-      "rumor": "Lean in close, Silas... that strange traveler who slipped through our gates on the eleventh hasn't breathed a word about why they're here, and I know for a fact Captain Kael's got his guards watching their every single move."
-    },
-    {
-      "day": 2,
-      "fromNpc": "guard",
-      "toNpc": "mayor",
-      "rumor": "Between you and me, Evelyn, that stranger who slipped past the gates the other day has been acting incredibly mysterious. They've barely said a word to anyone, and my guards are keeping a very close eye on them."
-    },
-    {
-      "day": 2,
-      "fromNpc": "merchant",
-      "toNpc": "mayor",
-      "rumor": "Between you and me, Mayor Evelyn, that new traveler has the audacity to claim they have absolutely no business in our village, yet they're lingering around looking for shelter. Captain Kael isn't buying it for a second—he's got his guards watching their every single move."
-    },
-    {
-      "day": 2,
-      "fromNpc": "mayor",
-      "toNpc": "guard",
-      "rumor": "I must say, Kael, it deeply concerns me how that stranger managed to slip right past our gates unnoticed, and they've barely spoken a single word to a soul since arriving. Someone who sneaks in and stays that quiet is definitely hiding something."
-    },
-    {
-      "day": 3,
-      "fromNpc": "blacksmith",
-      "toNpc": "guard",
-      "rumor": "Keep a close eye on that new traveler, Kael. First, the fellow struts about claiming he's 'Sir Galahad' on some grand royal quest, and now he's singing a completely different tune, swearing his name is 'Abhishek'! A lying snake like that is up to no good, and I've got no patience for his games."
-    },
-    {
-      "day": 3,
-      "fromNpc": "guard",
-      "toNpc": "mayor",
-      "rumor": "Keep your voice down, Evelyn, but my guards swear they never saw that traveler pass through the gates. Slipping past my men completely unnoticed like that takes a dangerous level of skill, and it makes me wonder what else they're sneaking around trying to hide."
-    },
-    {
-      "day": 3,
-      "fromNpc": "merchant",
-      "toNpc": "blacksmith",
-      "rumor": "Keep your voice down, Hagar... That new traveler claims they've no business in our village other than 'seeking shelter,' but Captain Kael isn't taking any chances—he's got his guards watching their every single move."
-    },
-    {
-      "day": 3,
-      "fromNpc": "mayor",
-      "toNpc": "guard",
-      "rumor": "You know, Kael, our new guest claims they have absolutely no business here in Echoes and are merely looking for shelter. But if they are so innocent, why on earth did they feel the need to slip past your gate guards completely unnoticed? If they truly have nothing to hide, they wouldn't have sneaked in like a thief in the night."
-    },
-    {
-      "day": 4,
-      "fromNpc": "blacksmith",
-      "toNpc": "merchant",
-      "rumor": "Silas, you tell me to keep my voice down, but listen to this—that stranger is a bold-faced liar! First, he struts in here calling himself 'Sir Galahad,' some fancy royal knight on a secret quest, and now he's singing a completely different tune, claiming his name is 'Abhishek.' I have no patience for these games, and thank gods Captain Kael already has guards watching him."
-    },
-    {
-      "day": 4,
-      "fromNpc": "guard",
-      "toNpc": "mayor",
-      "rumor": "Keep your guard up, Evelyn. That shifty stranger who sneaked past my gates has been throwing around different names—he told one person he's 'Sir Galahad' on a royal quest, but then claimed his name is 'Abhishek' to another. He can't even keep his own lies straight!"
-    }
-  ],
-  "coins": 45
+  "gossipLogs": [],
+  "corruption": 15
 }

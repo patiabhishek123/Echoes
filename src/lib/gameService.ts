@@ -27,6 +27,7 @@ export interface NPC {
   metrics: NPCMetrics;
   relationships: string;
   personality: string;
+  mood?: "calm" | "suspicious" | "corrupted";
 }
 
 export interface ChatMessage {
@@ -52,10 +53,11 @@ export interface GameState {
   day: number;
   coins: number;
   gameEnded: boolean;
-  endingType: "mayor" | "friend" | "outcast" | "arrested" | "merchant" | null;
+  endingType: "mayor" | "friend" | "outcast" | "arrested" | "merchant" | "corruption" | null;
   npcs: Record<string, NPC>;
   conversations: Record<string, ChatMessage[]>;
   gossipLogs: GossipLog[];
+  corruption?: number;
 }
 
 const INITIAL_NPCS: Record<string, NPC> = {
@@ -67,6 +69,7 @@ const INITIAL_NPCS: Record<string, NPC> = {
     metrics: { trust: 50, respect: 40, fear: 10, friendship: 30 },
     relationships: "Close friend of Captain Kael (Guard). Dislikes Silas the Merchant.",
     personality: "Gruff, hard-working, honest, and blunt. Values sweat, steel, and absolute honesty. Despises sweet talkers and inconsistency.",
+    mood: "calm"
   },
   guard: {
     id: "guard",
@@ -76,6 +79,7 @@ const INITIAL_NPCS: Record<string, NPC> = {
     metrics: { trust: 40, respect: 50, fear: 20, friendship: 20 },
     relationships: "Close friend of Hagar the Blacksmith. Suspicious of outsiders.",
     personality: "Stern, vigilant, orderly, and highly disciplined. Values consistency, law, and security. Suspicious of anyone whose story changes or who acts shifty.",
+    mood: "calm"
   },
   merchant: {
     id: "merchant",
@@ -85,6 +89,7 @@ const INITIAL_NPCS: Record<string, NPC> = {
     metrics: { trust: 60, respect: 30, fear: 5, friendship: 40 },
     relationships: "Always looking for trade secrets. Finds Mayor Evelyn intimidating.",
     personality: "Sly, charismatic, gossipy, and greedy. Loves gold, rumors, and knowing things others don't. Can be bribed with info or promises, but will sell out secrets just as fast.",
+    mood: "calm"
   },
   mayor: {
     id: "mayor",
@@ -94,6 +99,7 @@ const INITIAL_NPCS: Record<string, NPC> = {
     metrics: { trust: 30, respect: 60, fear: 15, friendship: 10 },
     relationships: "Demands respect. Keeps a close eye on Silas.",
     personality: "Dignified, elderly, politically minded, and secretive. Values status, respect, decorum, and the safety of the village. Suspicious of outsiders trying to gain influence.",
+    mood: "calm"
   }
 };
 
@@ -140,7 +146,8 @@ export function getGameState(): GameState {
         merchant: [],
         mayor: []
       },
-      gossipLogs: []
+      gossipLogs: [],
+      corruption: 15
     };
     saveGameState(newState);
     return newState;
@@ -151,6 +158,15 @@ export function getGameState(): GameState {
     const parsed = JSON.parse(data);
     if (parsed.coins === undefined) {
       parsed.coins = 30;
+    }
+    if (parsed.corruption === undefined) {
+      parsed.corruption = 15;
+    }
+    // Set default mood for all NPCs if missing
+    for (const npcId of Object.keys(parsed.npcs)) {
+      if (!parsed.npcs[npcId].mood) {
+        parsed.npcs[npcId].mood = "calm";
+      }
     }
     return parsed;
   } catch (error) {
@@ -168,7 +184,8 @@ export function getGameState(): GameState {
         merchant: [],
         mayor: []
       },
-      gossipLogs: []
+      gossipLogs: [],
+      corruption: 15
     };
     saveGameState(newState);
     return newState;
@@ -194,7 +211,8 @@ export async function resetGame(): Promise<GameState> {
       merchant: [],
       mayor: []
     },
-    gossipLogs: []
+    gossipLogs: [],
+    corruption: 15
   };
 
   saveGameState(newState);
@@ -215,6 +233,31 @@ export async function resetGame(): Promise<GameState> {
   );
 
   return newState;
+}
+
+export async function injectRumor(targetNpcId: string, rumor: string): Promise<GameState> {
+  const state = getGameState();
+  if ((state.coins ?? 30) < 15) {
+    throw new Error("Insufficient coins to synthesize rumor (needs 15)");
+  }
+  state.coins = (state.coins ?? 30) - 15;
+  state.corruption = Math.min(100, (state.corruption || 15) + 3);
+
+  const containerTag = `${targetNpcId}_${state.sessionId}`;
+  await addMemoryToSupermemory(containerTag, `Rumor heard in town: "${rumor}"`);
+
+  checkGameEndings(state);
+  saveGameState(state);
+  return state;
+}
+
+export function failMinigame(cost: number): GameState {
+  const state = getGameState();
+  state.coins = Math.max(0, (state.coins ?? 30) - cost);
+  state.corruption = Math.min(100, (state.corruption || 15) + 15);
+  checkGameEndings(state);
+  saveGameState(state);
+  return state;
 }
 
 // Supermemory API Helpers
@@ -377,15 +420,25 @@ export async function talkToNPC(npcId: string, playerMessage: string): Promise<{
     : "- The player has not recorded any past actions or statements in their journal.";
 
   // 3. Build the LLM prompt
+  const npcMood = npc.mood || "calm";
+  const globalCorruption = state.corruption || 15;
+
   const systemPrompt = `You are playing the role of ${npc.name}, the ${npc.role} in a medieval village simulation.
 Personality: ${npc.personality}
 Relationships: ${npc.relationships}
+Current Cognitive Mood: ${npcMood.toUpperCase()} (calm/suspicious/corrupted)
+Global System Corruption: ${globalCorruption}%
 
 Current relationship metrics with the Player:
 - Trust: ${npc.metrics.trust}/100 (High trust means they believe you, low trust means suspicious/hostile)
 - Respect: ${npc.metrics.respect}/100 (High respect means they value your words, low respect means they look down on you)
 - Fear: ${npc.metrics.fear}/100 (High fear means they are intimidated, low fear means they feel safe/dominant)
 - Friendship: ${npc.metrics.friendship}/100 (High friendship means they are warm/helpful, low means cold)
+
+Mood Behaviors:
+- CALM: Speak normally in character.
+- SUSPICIOUS: Highly defensive, suspicious of lies, does not trust changes in story. Any trust changes generated by you should be minimal/halved.
+- CORRUPTED: Speeches may feel slightly disjointed or fragmented.
 
 Here are your retrieved memories & facts about the player or village:
 ${memoriesContext}
@@ -424,11 +477,40 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
     const jsonStr = responseText.replace(/```json/g, "").replace(/```/g, "").trim();
     const data = JSON.parse(jsonStr);
 
+    // If contradiction detected, increase system corruption and toggle mood to suspicious
+    if (data.contradictionDetected) {
+      state.corruption = Math.min(100, (state.corruption || 15) + 10);
+      npc.mood = "suspicious";
+    } else {
+      // If corruption is high (>60%) and mood is calm, 40% chance to glitch
+      if ((state.corruption || 15) > 60 && npc.mood === "calm") {
+        if (Math.random() < 0.4) {
+          npc.mood = "corrupted";
+        }
+      }
+    }
+
     // 4. Update NPC metrics in Game State
-    npc.metrics.trust = Math.max(0, Math.min(100, npc.metrics.trust + (data.trustChange || 0)));
+    // Suspicious state halves positive trust changes
+    let tChange = data.trustChange || 0;
+    if (npc.mood === "suspicious" && tChange > 0) {
+      tChange = Math.floor(tChange / 2);
+    }
+    npc.metrics.trust = Math.max(0, Math.min(100, npc.metrics.trust + tChange));
     npc.metrics.respect = Math.max(0, Math.min(100, npc.metrics.respect + (data.respectChange || 0)));
     npc.metrics.fear = Math.max(0, Math.min(100, npc.metrics.fear + (data.fearChange || 0)));
     npc.metrics.friendship = Math.max(0, Math.min(100, npc.metrics.friendship + (data.friendshipChange || 0)));
+
+    // Post-process response if CORRUPTED: substitute words with binary/glitched bits
+    let finalResponse = data.response;
+    if (npc.mood === "corrupted") {
+      finalResponse = data.response.split(" ").map((word: string) => {
+        if (Math.random() < 0.35) {
+          return word.split("").map(() => Math.random() < 0.55 ? "0" : "1").join("");
+        }
+        return word;
+      }).join(" ");
+    }
 
     // 5. Save player message and NPC response in conversation log
     state.conversations[npcId].push({
@@ -438,7 +520,7 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
     });
     state.conversations[npcId].push({
       sender: "npc",
-      content: data.response,
+      content: finalResponse,
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     });
 
@@ -450,7 +532,7 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
     }
 
     // Ingest the conversation snippet too for dynamic context
-    await addMemoryToSupermemory(containerTag, `Conversation on Day ${state.day} - Player: "${playerMessage}" | You: "${data.response}"`);
+    await addMemoryToSupermemory(containerTag, `Conversation on Day ${state.day} - Player: "${playerMessage}" | You: "${finalResponse}"`);
 
     // If contradiction detected, add that memory too so they remember the lie
     if (data.contradictionDetected) {
@@ -462,9 +544,9 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
     saveGameState(state);
 
     return {
-      response: data.response,
+      response: finalResponse,
       metricChanges: {
-        trust: data.trustChange || 0,
+        trust: tChange,
         respect: data.respectChange || 0,
         fear: data.fearChange || 0,
         friendship: data.friendshipChange || 0
@@ -564,6 +646,20 @@ Return your answer as a JSON object matching this schema (Return ONLY JSON, no m
   // Reward player with 15 coins for surviving the day
   state.coins = (state.coins ?? 30) + 15;
   
+  // Decrease corruption by 15 for overnight buffer flushing
+  state.corruption = Math.max(0, (state.corruption || 15) - 15);
+
+  // Decaying suspicious states and resetting glitch/corrupted states overnight
+  for (const npcId of Object.keys(state.npcs)) {
+    const npc = state.npcs[npcId];
+    if (npc.mood === "suspicious") {
+      npc.metrics.trust = Math.max(0, npc.metrics.trust - 5);
+    }
+    if (npc.mood === "corrupted") {
+      npc.mood = "calm";
+    }
+  }
+
   checkGameEndings(state);
   saveGameState(state);
 
@@ -572,6 +668,13 @@ Return your answer as a JSON object matching this schema (Return ONLY JSON, no m
 
 function checkGameEndings(state: GameState) {
   if (state.gameEnded) return;
+
+  // Ending 0: System Lockdown (Global Corruption reaches 100%)
+  if ((state.corruption || 15) >= 100) {
+    state.gameEnded = true;
+    state.endingType = "corruption";
+    return;
+  }
 
   const blacksmith = state.npcs.blacksmith.metrics;
   const guard = state.npcs.guard.metrics;

@@ -4,7 +4,8 @@ import { useEffect, useState, useRef } from "react";
 import { 
   MessageSquare, Hammer, Shield, Coins, Crown, 
   AlertTriangle, Moon, RefreshCw, BookOpen, Activity,
-  ChevronRight, User, Loader2, Heart, Info, Clock, Sparkles
+  ChevronRight, User, Loader2, Heart, Info, Clock, Sparkles,
+  Cpu, FlaskConical
 } from "lucide-react";
 import { GameState, NPC, ChatMessage, GossipLog, MemoryItem } from "@/lib/gameService";
 
@@ -24,11 +25,96 @@ const nodeCoordinates: Record<string, { x: number; y: number }> = {
   mayor: { x: 270, y: 280 },
 };
 
+class JRPGSynth {
+  ctx: AudioContext | null = null;
+  isPlaying: boolean = false;
+  tempo = 120;
+  timer: any = null;
+
+  start() {
+    if (this.isPlaying) return;
+    const AudioContextClass = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) return;
+    this.ctx = new AudioContextClass();
+    this.isPlaying = true;
+    
+    let step = 0;
+    // Nostalgic JRPG cozy progression
+    const chords = [
+      [60, 64, 67, 71], // Cmaj7
+      [62, 65, 69, 72], // Dm7
+      [57, 60, 64, 67], // Am7
+      [59, 62, 66, 69]  // Bm7
+    ];
+
+    const playNote = (midi: number, time: number, duration: number, type: OscillatorType = "sine", vol = 0.05) => {
+      if (!this.ctx) return;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      
+      osc.type = type;
+      osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), time);
+      
+      gain.gain.setValueAtTime(vol, time);
+      gain.gain.exponentialRampToValueAtTime(0.00001, time + duration);
+      
+      osc.connect(gain);
+      gain.connect(this.ctx.destination);
+      osc.start(time);
+      osc.stop(time + duration);
+    };
+
+    const scheduler = () => {
+      if (!this.isPlaying || !this.ctx) return;
+      const secPerBeat = 60 / this.tempo;
+      const chordIndex = Math.floor(step / 16) % chords.length;
+      const chord = chords[chordIndex];
+      const noteIndex = step % 16;
+
+      // Bass notes on step 0, 4, 8, 12
+      if (noteIndex % 4 === 0) {
+        playNote(chord[0] - 12, this.ctx.currentTime, secPerBeat * 2.0, "triangle", 0.07);
+      }
+
+      // Arpeggios on steps
+      const arpPattern = [0, 2, 1, 3, 2, 0, 1, 2];
+      const arpNote = chord[arpPattern[noteIndex % arpPattern.length]];
+      if (noteIndex % 2 === 0) {
+        playNote(arpNote, this.ctx.currentTime, secPerBeat * 0.4, "sine", 0.04);
+      }
+
+      // Melody
+      if (noteIndex === 3 || noteIndex === 7 || noteIndex === 11 || noteIndex === 14) {
+        const melodyMelodies = [72, 74, 76, 79, 81];
+        const mel = melodyMelodies[Math.floor(Math.random() * melodyMelodies.length)];
+        playNote(mel, this.ctx.currentTime, secPerBeat * 0.8, "sine", 0.03);
+      }
+
+      step += 1;
+      this.timer = setTimeout(scheduler, secPerBeat * 250);
+    };
+
+    scheduler();
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.timer) clearTimeout(this.timer);
+    if (this.ctx) {
+      this.ctx.close();
+      this.ctx = null;
+    }
+  }
+}
+
 export default function GamePage() {
   const [state, setState] = useState<GameState | null>(null);
   const [showOnboarding, setShowOnboarding] = useState<boolean>(true);
   const [onboardingStep, setOnboardingStep] = useState<number>(1);
   const [mouseOffset, setMouseOffset] = useState({ x: 0, y: 0 });
+  const [landingScreenActive, setLandingScreenActive] = useState<boolean>(true);
+  const [musicPlaying, setMusicPlaying] = useState<boolean>(false);
+  const synthRef = useRef<any>(null);
   
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -65,11 +151,53 @@ export default function GamePage() {
   const [journalInput, setJournalInput] = useState<string>(" ");
   const [vectorQuery, setVectorQuery] = useState<string>("");
 
+  // Decryption Minigame State
+  const [showMinigame, setShowMinigame] = useState<boolean>(false);
+  const [minigameDocId, setMinigameDocId] = useState<string>("");
+  const [minigameNpcId, setMinigameNpcId] = useState<string>("");
+  const [minigameIsGlitched, setMinigameIsGlitched] = useState<boolean>(false);
+  const [minigameTarget, setMinigameTarget] = useState<string>("");
+  const [minigameGrid, setMinigameGrid] = useState<string[]>([]);
+  const [minigameTimer, setMinigameTimer] = useState<number>(8);
+  const minigameIntervalRef = useRef<any>(null);
+
+  // Rumor Synthesis State
+  const [synthNote1, setSynthNote1] = useState<string>("");
+  const [synthNote2, setSynthNote2] = useState<string>("");
+  const [synthTargetNpcId, setSynthTargetNpcId] = useState<string>("blacksmith");
+  const [isSynthLabOpen, setIsSynthLabOpen] = useState<boolean>(false);
+
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   const conversationsForTypewriter = state?.conversations[selectedNpcId] || [];
   const latestNpcMessage = conversationsForTypewriter.slice().reverse().find(c => c.sender === "npc")?.content || 
     `Select Hagar, Kael, Silas, or Evelyn to converse with them and discover their memories.`;
+
+  // Start music helper
+  const toggleMusic = () => {
+    if (musicPlaying) {
+      if (synthRef.current) {
+        synthRef.current.stop();
+      }
+      setMusicPlaying(false);
+      showNotification("AMBIENT TRANSMISSION PAUSED", "info");
+    } else {
+      if (!synthRef.current) {
+        synthRef.current = new JRPGSynth();
+      }
+      synthRef.current.start();
+      setMusicPlaying(true);
+      showNotification("AMBIENT TRANSMISSION ESTABLISHED", "success");
+    }
+  };
+
+  useEffect(() => {
+    return () => {
+      if (synthRef.current) {
+        synthRef.current.stop();
+      }
+    };
+  }, []);
 
   // Fetch current game state
   const fetchState = async () => {
@@ -279,31 +407,165 @@ export default function GamePage() {
     }
   };
 
-  // Consume Oblivion Potion to erase an NPC memory
+  // Consume Oblivion Potion to erase an NPC memory (triggers Decryption Minigame)
   const handleWipeMemory = async (docId: string) => {
     if (!state) return;
-    if ((state.coins ?? 30) < 20) {
-      showNotification("INSUFFICIENT COINS FOR OBLIVION POTION (NEEDS 20)", "error");
+    const npc = state.npcs[selectedNpcId];
+    if (!npc) return;
+
+    let cost = 10;
+    if (npc.mood === "suspicious") {
+      cost = 20;
+    } else if (npc.mood === "corrupted") {
+      cost = 15;
+    }
+
+    if ((state.coins ?? 30) < cost) {
+      showNotification(`INSUFFICIENT COINS FOR OBLIVION POTION (NEEDS ${cost})`, "error");
       return;
     }
 
-    if (!confirm("USE OBLIVION POTION TO ERASE THIS FACT? (COSTS 20 COINS)")) return;
+    // Generate random 4-character hex target and 15 decoys
+    const hexChars = "0123456789ABCDEF";
+    const genCode = () => Array.from({ length: 4 }, () => hexChars[Math.floor(Math.random() * 16)]).join("");
+    const targetCode = genCode();
+    const grid: string[] = [];
+    for (let i = 0; i < 15; i++) {
+      grid.push(genCode());
+    }
+    const randomIndex = Math.floor(Math.random() * 16);
+    grid.splice(randomIndex, 0, targetCode);
+
+    setMinigameDocId(docId);
+    setMinigameNpcId(selectedNpcId);
+    const isGlitched = npc.mood === "corrupted";
+    setMinigameIsGlitched(isGlitched);
+    setMinigameTarget(targetCode);
+    setMinigameGrid(grid);
+    
+    const limit = isGlitched ? 5 : 8;
+    setMinigameTimer(limit);
+    setShowMinigame(true);
+
+    if (minigameIntervalRef.current) clearInterval(minigameIntervalRef.current);
+    let timeLeft = limit;
+    minigameIntervalRef.current = setInterval(() => {
+      timeLeft -= 1;
+      setMinigameTimer(timeLeft);
+      if (timeLeft <= 0) {
+        if (minigameIntervalRef.current) clearInterval(minigameIntervalRef.current);
+        handleFailMinigame(selectedNpcId);
+      }
+    }, 1000);
+  };
+
+  const handleFailMinigame = async (npcId: string) => {
+    setShowMinigame(false);
+    if (minigameIntervalRef.current) clearInterval(minigameIntervalRef.current);
+    showNotification("DECRYPTION TIMED OUT! MEMORY LOCKOUT FAILED (+15% Corruption).", "error");
 
     try {
-      const res = await fetch(`/api/memories?docId=${docId}`, {
+      const res = await fetch("/api/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "failMinigame", cost: 10 })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setState(data);
+      }
+    } catch (err) {
+      console.error("Error failing minigame:", err);
+    }
+  };
+
+  const handleSelectMinigameCell = async (selectedCode: string) => {
+    if (minigameIntervalRef.current) clearInterval(minigameIntervalRef.current);
+    setShowMinigame(false);
+
+    if (selectedCode !== minigameTarget) {
+      showNotification("INCORRECT VECTOR KEY! DECRYPTION FAILED (+15% Corruption).", "error");
+      try {
+        const res = await fetch("/api/state", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "failMinigame", cost: 10 })
+        });
+        if (res.ok) {
+          const data = await res.json();
+          setState(data);
+        }
+      } catch (err) {
+        console.error("Error failing minigame:", err);
+      }
+      return;
+    }
+
+    // Success! Delete the memory
+    try {
+      const res = await fetch(`/api/memories?docId=${minigameDocId}&npcId=${minigameNpcId}&isGlitched=${minigameIsGlitched}`, {
         method: "DELETE"
       });
       if (res.ok) {
         const data = await res.json();
-        setState(prev => prev ? { ...prev, coins: data.coins } : null);
-        showNotification("POTION CONSUMED. MEMORY PERMANENTLY ERASED.", "success");
+        setState(data);
+        showNotification(
+          minigameIsGlitched 
+            ? "GLITCH REPAIRED. NPC CONSTRAINTS STABILIZED (-10% Corruption)." 
+            : "VECTOR OVERWRITTEN. MEMORY COLD-LOCKED (+5% Corruption).", 
+          "success"
+        );
         fetchMemories();
       } else {
         const err = await res.json();
-        showNotification(err.error || "POTION BOILED OVER (FAILED).", "error");
+        showNotification(err.error || "OBLIVION BOILED OVER.", "error");
       }
     } catch (e) {
-      showNotification("POTION INTERRUPTED.", "error");
+      showNotification("DECRYPTION INTERRUPTED.", "error");
+    }
+  };
+
+  // Rumor Synthesis Lab trigger
+  const handleSynthesizeRumor = async () => {
+    if (!state) return;
+    if (!synthNote1 || !synthNote2) {
+      showNotification("SELECT TWO JOURNAL NOTES TO SYNTHESIZE A RUMOR.", "error");
+      return;
+    }
+    if ((state.coins ?? 30) < 15) {
+      showNotification("INSUFFICIENT COINS FOR RUMOR SYNTHESIS (NEEDS 15)", "error");
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const rumor = `Combined Intel: ${synthNote1} AND ${synthNote2}`;
+      const res = await fetch("/api/state", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "injectRumor",
+          targetNpcId: synthTargetNpcId,
+          rumor
+        })
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        setState(data);
+        showNotification("RUMOR SYNTHESIZED & INJECTED INTO NPC SECOND BRAIN (+3% Corruption).", "success");
+        setSynthNote1("");
+        setSynthNote2("");
+        setIsSynthLabOpen(false);
+        fetchMemories();
+      } else {
+        const err = await res.json();
+        showNotification(err.error || "SYNTHESIS REJECTED.", "error");
+      }
+    } catch (e) {
+      showNotification("SYNTHESIS FAILURE.", "error");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -385,6 +647,196 @@ export default function GamePage() {
       </div>
     );
   };
+
+  if (landingScreenActive) {
+    return (
+      <div className="flex-grow flex flex-col justify-between items-center bg-gradient-to-br from-[#fff7e6] via-[#ffdca3] to-[#e8be90] text-[#382c22] min-h-screen p-4 md:p-8 relative overflow-hidden select-none font-mono">
+        <style dangerouslySetInnerHTML={{__html: `
+          @keyframes slow-spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+          }
+          @keyframes float-gentle {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-6px); }
+          }
+          .animate-slow-spin {
+            animation: slow-spin 120s linear infinite;
+          }
+          .animate-float-gentle {
+            animation: float-gentle 6s ease-in-out infinite;
+          }
+          .pixelated {
+            image-rendering: pixelated;
+          }
+          .title-shadow {
+            text-shadow: 3px 3px 0px #ebdcb9, 6px 6px 0px #38251b;
+          }
+        `}} />
+
+        {/* Parallax Background Layer 1: Rotating Sunburst / Light rays */}
+        <div 
+          className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          style={{
+            transform: `translate(${mouseOffset.x * 0.1}px, ${mouseOffset.y * 0.1}px)`,
+            transition: 'transform 0.15s ease-out'
+          }}
+        >
+          <svg className="w-[160%] h-[160%] opacity-[0.04] animate-slow-spin" viewBox="0 0 100 100">
+            <circle cx="50" cy="50" r="50" fill="none" />
+            {Array.from({ length: 18 }).map((_, i) => {
+              const angle = i * 20;
+              return (
+                <path
+                  key={i}
+                  d={`M50,50 L${50 + 100 * Math.cos((angle * Math.PI) / 180)},${50 + 100 * Math.sin((angle * Math.PI) / 180)} L${50 + 100 * Math.cos(((angle + 10) * Math.PI) / 180)},${50 + 100 * Math.sin(((angle + 10) * Math.PI) / 180)} Z`}
+                  fill="#38251b"
+                />
+              );
+            })}
+          </svg>
+        </div>
+
+        {/* Parallax Background Layer 2: Scenic Forest & Cottages Silhouettes */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            transform: `translate(${mouseOffset.x * 0.25}px, ${mouseOffset.y * 0.25}px)`,
+            transition: 'transform 0.2s ease-out'
+          }}
+        >
+          {/* Distant trees & mountains SVG */}
+          <svg className="absolute bottom-0 left-0 w-full h-[35%] opacity-[0.15]" viewBox="0 0 1000 300" preserveAspectRatio="none">
+            <path d="M0,300 L0,220 L40,180 L80,220 L120,170 L160,220 L200,160 L240,220 L280,185 L320,220 L360,175 L400,220 L440,165 L480,220 L520,180 L560,220 L600,170 L640,220 L680,160 L720,220 L760,175 L800,220 L840,165 L880,220 L920,180 L960,220 L1000,170 L1000,300 Z" fill="#855b32" />
+            <path d="M0,300 L0,250 L60,210 L120,250 L180,200 L240,250 L300,210 L360,250 L420,205 L480,250 L540,215 L600,250 L660,200 L720,250 L780,210 L840,250 L900,205 L960,250 L1000,220 L1000,300 Z" fill="#38251b" />
+          </svg>
+
+          {/* Cottage silhouette SVG */}
+          <svg className="absolute bottom-[2%] left-[15%] w-24 h-16 opacity-20" viewBox="0 0 100 60">
+            <polygon points="10,60 10,35 50,10 90,35 90,60" fill="#38251b" />
+            <polygon points="40,60 40,42 60,42 60,60" fill="#ebdcb9" />
+          </svg>
+        </div>
+
+        {/* Parallax Background Layer 3: Floating Clouds and digital cells */}
+        <div 
+          className="absolute inset-0 pointer-events-none"
+          style={{
+            transform: `translate(${mouseOffset.x * 0.5}px, ${mouseOffset.y * 0.5}px)`,
+            transition: 'transform 0.25s ease-out'
+          }}
+        >
+          {/* Cloud 1 */}
+          <svg className="absolute w-40 h-14 opacity-25 animate-float-gentle" style={{ top: '15%', left: '18%' }} viewBox="0 0 100 40">
+            <path d="M10,30 L90,30 L90,20 L80,20 L80,15 L70,15 L70,10 L30,10 L30,15 L20,15 L20,20 L10,20 Z" fill="#ffffff" />
+          </svg>
+          {/* Cloud 2 */}
+          <svg className="absolute w-48 h-16 opacity-20" style={{ top: '25%', right: '22%' }} viewBox="0 0 100 40">
+            <path d="M10,30 L90,30 L90,20 L80,20 L80,15 L70,15 L70,10 L30,10 L30,15 L20,15 L20,20 L10,20 Z" fill="#ffffff" />
+          </svg>
+        </div>
+
+        {/* Header Bar */}
+        <div className="w-full max-w-5xl flex justify-between items-center border-b-2 border-[#38251b]/40 pb-3 z-10 text-[9px] font-bold text-[#855b32] uppercase">
+          <span>VILLAGE_LOG: SESSION_{state?.sessionId?.slice(0, 8) || "ACTIVE"}</span>
+          <span>CHRONICLE RESTORATION CORE v1.4.0</span>
+        </div>
+
+        {/* Main Content Portal Container */}
+        <div 
+          className="flex-1 flex flex-col justify-center items-center z-10 max-w-xl text-center gap-6 my-6 w-full"
+          style={{
+            transform: `translate(${-mouseOffset.x * 0.1}px, ${-mouseOffset.y * 0.1}px)`,
+            transition: 'transform 0.12s ease-out'
+          }}
+        >
+          
+          {/* Main Title Banner */}
+          <div className="flex flex-col items-center">
+            {/* Mascot Memo greeting in JRPG card style */}
+            <div className="flex items-center gap-3 bg-[#ebdcb9] border-4 border-[#38251b] rounded-lg p-3 max-w-md mb-4 shadow-[4px_4px_0px_#38251b] relative">
+              <div className="w-12 h-12 rounded overflow-hidden border-2 border-[#38251b] bg-[#38251b] shrink-0 relative">
+                <img 
+                  src="/portraits/mascot.png" 
+                  alt="Memo" 
+                  className="w-full h-full object-cover pixelated"
+                />
+              </div>
+              <div className="text-left">
+                <div className="text-[9px] font-bold text-[#a84424] uppercase tracking-wider mb-0.5">MEMO (VILLAGE GUIDE)</div>
+                <p className="text-[9px] text-[#4a3b2c] leading-relaxed font-mono font-medium">
+                  &ldquo;A contradiction has fractured the chronicles! Establish BGM audio connection and let us restore the timeline.&rdquo;
+                </p>
+              </div>
+            </div>
+
+            {/* Glowing JRPG Title */}
+            <h1 
+              className="text-7xl md:text-8xl font-black text-[#382c22] uppercase tracking-[0.25em] select-none font-mono title-shadow"
+              style={{ fontFamily: 'var(--font-vt323)' }}
+            >
+              E C H O E S
+            </h1>
+            <p className="text-[10px] uppercase tracking-[0.3em] text-[#855b32] font-mono mt-3 font-bold">
+              Cognitive Restoration & Memory Vector Intrusion
+            </p>
+          </div>
+
+          {/* Action placers (BGM Toggle & Enter Core Buttons) */}
+          <div className="flex flex-col sm:flex-row gap-3 items-center justify-center w-full px-4">
+            
+            {/* Audio Toggle BGM */}
+            <button
+              type="button"
+              onClick={toggleMusic}
+              className={`w-full sm:w-auto font-mono text-[10px] px-5 py-3 border-2 border-[#38251b] rounded cursor-pointer transition-all duration-150 flex items-center justify-center gap-2 shadow-[2px_2px_0px_#38251b] active:translate-y-0.5 ${
+                musicPlaying 
+                  ? "bg-emerald-800 text-emerald-100 hover:bg-emerald-750 font-bold"
+                  : "bg-[#ebdcb9] hover:bg-[#e6d0a1] text-[#382c22]"
+              }`}
+            >
+              <span>{musicPlaying ? "🔊" : "🔇"}</span>
+              <span className="tracking-wider uppercase">
+                {musicPlaying ? "[BGM LINK ACTIVE]" : "[CONNECT AUDIO BGM]"}
+              </span>
+            </button>
+
+            {/* Enter Button */}
+            <button
+              type="button"
+              onClick={() => {
+                if (!musicPlaying) {
+                  toggleMusic();
+                }
+                setLandingScreenActive(false);
+              }}
+              className="w-full sm:w-auto bg-[#a84424] hover:bg-[#c2512f] text-amber-100 font-mono text-[10px] tracking-widest px-8 py-3 border-2 border-[#38251b] shadow-[4px_4px_0px_#38251b] hover:shadow-[6px_6px_0px_#38251b] transition-all duration-150 cursor-pointer font-bold uppercase active:translate-y-1 active:shadow-[2px_2px_0px_#38251b]"
+            >
+              [⚡ RESTORE CHRONICLE]
+            </button>
+          </div>
+
+          {/* System logs widget in parchment style */}
+          <div className="w-full bg-[#ebdcb9]/80 border-2 border-[#38251b] rounded p-3.5 text-left text-[9px] text-[#5c4033] font-mono flex flex-col gap-1 shadow-[4px_4px_0px_#38251b] max-w-md">
+            <div className="border-b border-[#38251b]/30 pb-1 mb-1 font-bold text-[#a84424] uppercase flex justify-between">
+              <span>SYSTEM DIAGNOSTIC</span>
+              <span className="animate-pulse">● COGNITIVE CORE ONLINE</span>
+            </div>
+            <div>&gt; INTRUSION INTERFACE... [ACTIVE]</div>
+            <div>&gt; RETRIEVING MEMORY CONSTRAINTS... [4 NODES MAPPED]</div>
+            <div>&gt; SYNAPSE ROUTING... [VIA SUPERMEMORY INSTANCE]</div>
+          </div>
+
+        </div>
+
+        {/* Footer */}
+        <div className="w-full max-w-5xl flex justify-between items-center border-t-2 border-[#38251b]/40 pt-3 z-10 text-[9px] font-bold text-[#855b32]">
+          <span>AUTHENTICATED INTRUDER PROTOCOL</span>
+          <span>© 2026 ECHOSYSTEMS</span>
+        </div>
+      </div>
+    );
+  }
 
   if (loading || !state) {
     return (
@@ -951,10 +1403,24 @@ export default function GamePage() {
               className={`absolute top-[38%] left-[14%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "blacksmith" ? "sprite-bob" : ""}`}
             >
               {/* Relation bar */}
-              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-0.5">
                 <div className="h-full bg-orange-500 transition-all duration-300" style={{ width: `${state.npcs.blacksmith.metrics.trust}%` }} />
               </div>
-              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "blacksmith" ? "border-orange-500 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+              {state.npcs.blacksmith.mood === "suspicious" && (
+                <span className="text-[5px] font-mono font-bold text-amber-400 bg-stone-900 border border-amber-500 px-0.5 rounded leading-none mb-0.5 scale-90">SUSPECT</span>
+              )}
+              {state.npcs.blacksmith.mood === "corrupted" && (
+                <span className="text-[5px] font-mono font-bold text-green-400 bg-stone-900 border border-green-500 px-0.5 rounded leading-none mb-0.5 animate-pulse scale-90">CORRUPT</span>
+              )}
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${
+                selectedNpcId === "blacksmith" 
+                  ? "border-orange-500 scale-110 grayscale-0" 
+                  : state.npcs.blacksmith.mood === "corrupted"
+                    ? "border-green-500 shadow-[0_0_8px_#22c55e] grayscale-0 animate-pulse"
+                    : state.npcs.blacksmith.mood === "suspicious"
+                      ? "border-amber-500 grayscale-0"
+                      : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"
+              }`}>
                 <img src={state.npcs.blacksmith.portrait} alt="Hagar" className="w-full h-full object-cover" />
               </div>
               <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">HAGAR</span>
@@ -969,10 +1435,24 @@ export default function GamePage() {
               className={`absolute top-[38%] left-[74%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "guard" ? "sprite-bob" : ""}`}
             >
               {/* Relation bar */}
-              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-0.5">
                 <div className="h-full bg-cyan-500 transition-all duration-300" style={{ width: `${state.npcs.guard.metrics.trust}%` }} />
               </div>
-              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "guard" ? "border-cyan-400 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+              {state.npcs.guard.mood === "suspicious" && (
+                <span className="text-[5px] font-mono font-bold text-amber-400 bg-stone-900 border border-amber-500 px-0.5 rounded leading-none mb-0.5 scale-90">SUSPECT</span>
+              )}
+              {state.npcs.guard.mood === "corrupted" && (
+                <span className="text-[5px] font-mono font-bold text-green-400 bg-stone-900 border border-green-500 px-0.5 rounded leading-none mb-0.5 animate-pulse scale-90">CORRUPT</span>
+              )}
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${
+                selectedNpcId === "guard" 
+                  ? "border-cyan-400 scale-110 grayscale-0" 
+                  : state.npcs.guard.mood === "corrupted"
+                    ? "border-green-500 shadow-[0_0_8px_#22c55e] grayscale-0 animate-pulse"
+                    : state.npcs.guard.mood === "suspicious"
+                      ? "border-amber-500 grayscale-0"
+                      : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"
+              }`}>
                 <img src={state.npcs.guard.portrait} alt="Kael" className="w-full h-full object-cover" />
               </div>
               <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">KAEL</span>
@@ -987,10 +1467,24 @@ export default function GamePage() {
               className={`absolute top-[66%] left-[14%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "merchant" ? "sprite-bob" : ""}`}
             >
               {/* Relation bar */}
-              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-0.5">
                 <div className="h-full bg-yellow-500 transition-all duration-300" style={{ width: `${state.npcs.merchant.metrics.trust}%` }} />
               </div>
-              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "merchant" ? "border-yellow-400 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+              {state.npcs.merchant.mood === "suspicious" && (
+                <span className="text-[5px] font-mono font-bold text-amber-400 bg-stone-900 border border-amber-500 px-0.5 rounded leading-none mb-0.5 scale-90">SUSPECT</span>
+              )}
+              {state.npcs.merchant.mood === "corrupted" && (
+                <span className="text-[5px] font-mono font-bold text-green-400 bg-stone-900 border border-green-500 px-0.5 rounded leading-none mb-0.5 animate-pulse scale-90">CORRUPT</span>
+              )}
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${
+                selectedNpcId === "merchant" 
+                  ? "border-yellow-400 scale-110 grayscale-0" 
+                  : state.npcs.merchant.mood === "corrupted"
+                    ? "border-green-500 shadow-[0_0_8px_#22c55e] grayscale-0 animate-pulse"
+                    : state.npcs.merchant.mood === "suspicious"
+                      ? "border-amber-500 grayscale-0"
+                      : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"
+              }`}>
                 <img src={state.npcs.merchant.portrait} alt="Silas" className="w-full h-full object-cover" />
               </div>
               <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">SILAS</span>
@@ -1005,10 +1499,24 @@ export default function GamePage() {
               className={`absolute top-[66%] left-[74%] w-11 h-14 cursor-pointer flex flex-col items-center z-20 ${selectedNpcId === "mayor" ? "sprite-bob" : ""}`}
             >
               {/* Relation bar */}
-              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-1">
+              <div className="w-8 h-1 bg-black/60 rounded-full overflow-hidden border border-stone-800 mb-0.5">
                 <div className="h-full bg-purple-500 transition-all duration-300" style={{ width: `${state.npcs.mayor.metrics.trust}%` }} />
               </div>
-              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${selectedNpcId === "mayor" ? "border-purple-400 scale-110 grayscale-0" : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"}`}>
+              {state.npcs.mayor.mood === "suspicious" && (
+                <span className="text-[5px] font-mono font-bold text-amber-400 bg-stone-900 border border-amber-500 px-0.5 rounded leading-none mb-0.5 scale-90">SUSPECT</span>
+              )}
+              {state.npcs.mayor.mood === "corrupted" && (
+                <span className="text-[5px] font-mono font-bold text-green-400 bg-stone-900 border border-green-500 px-0.5 rounded leading-none mb-0.5 animate-pulse scale-90">CORRUPT</span>
+              )}
+              <div className={`w-8 h-8 rounded-full border-2 overflow-hidden bg-black shadow-md transition-all duration-300 ${
+                selectedNpcId === "mayor" 
+                  ? "border-purple-400 scale-110 grayscale-0" 
+                  : state.npcs.mayor.mood === "corrupted"
+                    ? "border-green-500 shadow-[0_0_8px_#22c55e] grayscale-0 animate-pulse"
+                    : state.npcs.mayor.mood === "suspicious"
+                      ? "border-amber-500 grayscale-0"
+                      : "border-slate-600 grayscale opacity-85 hover:grayscale-0 hover:opacity-100"
+              }`}>
                 <img src={state.npcs.mayor.portrait} alt="Evelyn" className="w-full h-full object-cover" />
               </div>
               <span className="text-[6.5px] font-mono text-stone-900 font-bold uppercase tracking-wider mt-0.5 bg-white/80 px-1 rounded shadow">EVELYN</span>
@@ -1123,6 +1631,7 @@ export default function GamePage() {
               {state.endingType === "mayor" && "VICTORY: APPOINTED ADVISOR"}
               {state.endingType === "merchant" && "VICTORY: MASTER OF EXCHANGE"}
               {state.endingType === "friend" && "VICTORY: VILLAGE CHRONICLER"}
+              {state.endingType === "corruption" && "SYSTEM LOCKDOWN: CRITICAL SHUTDOWN"}
             </h3>
             <p className="text-sm text-slate-300 mt-2 max-w-2xl mx-auto leading-relaxed font-mono">
               {state.endingType === "arrested" && "Your statements failed Kael's consistency matrix. Declared an unregistered spy and locked in the cell blocks indefinitely."}
@@ -1130,6 +1639,7 @@ export default function GamePage() {
               {state.endingType === "mayor" && "Successful manipulation completed. Evelyn trust matrix reached 100%. Appointed administrative director of Echoes."}
               {state.endingType === "merchant" && "Silas loved your business secrets. You've established trade monopoly and monopolized village liquidity."}
               {state.endingType === "friend" && "Full network consensus achieved. All inhabitants registered 80%+ friendship metrics."}
+              {state.endingType === "corruption" && "The simulation suffered directory fragmentation and node failures from aggressive memory wiping. The kernel has crashed and went into emergency lockdown."}
             </p>
             <button
               onClick={handleResetGame}
@@ -1228,6 +1738,13 @@ export default function GamePage() {
                   }`}
                 >
                   [✏️ MY JOURNAL]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSynthLabOpen(true)}
+                  className="font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition border-purple-800 text-purple-400 hover:bg-purple-950/20"
+                >
+                  🧪 [RUMOR LAB]
                 </button>
               </div>
             </div>
@@ -1369,9 +1886,9 @@ export default function GamePage() {
                           </span>
                           <button
                             onClick={() => handleWipeMemory(item.id)}
-                            disabled={!item.id || (state.coins ?? 30) < 20}
+                            disabled={!item.id || (state.coins ?? 30) < (state.npcs[selectedNpcId]?.mood === "suspicious" ? 20 : state.npcs[selectedNpcId]?.mood === "corrupted" ? 15 : 10)}
                             className="bg-[#a84424] hover:bg-[#c2512f] disabled:opacity-30 text-amber-100 font-mono text-[7px] px-1.5 py-0.5 rounded cursor-pointer transition shrink-0"
-                            title="Consumes Oblivion Potion (20 Coins) to wipe this memory"
+                            title={`Wipes this memory (Costs ${state.npcs[selectedNpcId]?.mood === "suspicious" ? 20 : state.npcs[selectedNpcId]?.mood === "corrupted" ? 15 : 10} Coins)`}
                           >
                             [WIPE POTION]
                           </button>
@@ -1505,6 +2022,167 @@ export default function GamePage() {
             RECORDING TALE {currentGossipIndex + 1} OF {gossipAnimationLog.length} · AUTO-PROGRESSING
           </div>
           <div className="scanlines pointer-events-none" />
+        </div>
+      )}
+
+      {/* Decryption Grid Minigame Modal */}
+      {showMinigame && (
+        <div className="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm select-none p-4">
+          <div className="max-w-md w-full bg-[#140f0c] border-4 border-cyan-800 rounded p-6 shadow-[0_0_30px_rgba(6,182,212,0.4)] text-center relative overflow-hidden">
+            {/* Retro scanning grid backgrounds */}
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[size:100%_4px,6px_100%] pointer-events-none" />
+            
+            <h3 className="text-lg font-mono font-bold text-cyan-400 tracking-wider mb-2 uppercase flex items-center justify-center gap-2">
+              <Cpu className="w-5 h-5 animate-spin" />
+              DECRYPTION GRID NODE ACTIVE
+            </h3>
+            
+            <p className="text-[10px] font-mono text-cyan-500/80 mb-4 uppercase">
+              Locate and match the TARGET VECTOR ID to wipe the memory from constraints.
+            </p>
+
+            <div className="bg-black/50 border border-cyan-900 rounded p-3 mb-4">
+              <div className="text-[10px] font-mono text-slate-400 uppercase tracking-widest">TARGET SECTOR ID</div>
+              <div className="text-3xl font-mono font-bold text-cyan-300 tracking-widest my-1 animate-pulse">
+                {minigameTarget}
+              </div>
+              <div className="text-[9px] font-mono text-amber-500 font-bold uppercase mt-1">
+                SYSTEM SHUTDOWN IN: <span className="text-red-500 text-sm font-black">{minigameTimer}s</span>
+              </div>
+            </div>
+
+            {/* Grid layout */}
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {minigameGrid.map((code, idx) => {
+                return (
+                  <button
+                    key={idx}
+                    onClick={() => handleSelectMinigameCell(code)}
+                    className={`h-11 font-mono text-xs font-bold border rounded transition-all cursor-pointer flex items-center justify-center uppercase select-none ${
+                      minigameIsGlitched 
+                        ? "bg-green-950/20 border-green-800 text-green-400 hover:bg-green-900/40 shadow-[0_0_4px_rgba(34,197,94,0.3)] animate-pulse" 
+                        : "bg-slate-950/40 border-cyan-900 text-cyan-300 hover:bg-cyan-950/60 hover:border-cyan-500"
+                    }`}
+                    style={minigameIsGlitched ? { 
+                      transform: `rotate(${Math.sin(idx) * 2}deg) translate(${Math.cos(idx) * 1}px, 0)`,
+                      fontFamily: 'monospace'
+                    } : {}}
+                  >
+                    {code}
+                  </button>
+                );
+              })}
+            </div>
+
+            <p className="text-[8px] font-mono text-red-500 uppercase tracking-wide">
+              WARNING: WRONG CELL SELECTION OR TIMEOUT WILL ABORT OPERATION AND SPIKE CORRUPTION (+15%).
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* Rumor Synthesis Lab Modal */}
+      {isSynthLabOpen && (
+        <div className="fixed inset-0 z-[110] flex flex-col items-center justify-center bg-black/90 backdrop-blur-sm select-none p-4">
+          <div className="max-w-md w-full bg-[#241710] border-4 border-purple-800 rounded p-6 shadow-[0_0_30px_rgba(147,51,234,0.4)] relative">
+            <h3 className="text-lg font-mono font-bold text-purple-400 tracking-wider mb-2 uppercase flex items-center gap-2">
+              <FlaskConical className="w-5 h-5 text-purple-400 animate-pulse" />
+              RUMOR SYNTHESIS LAB
+            </h3>
+            
+            <p className="text-[10px] font-mono text-purple-300/80 mb-4 uppercase">
+              Combine two recorded cover stories or log entries into a custom rumor and inject it directly into an NPC's cognitive tag.
+            </p>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-mono text-amber-500 font-bold uppercase mb-1">
+                  1. SELECT COGNITIVE SOURCE NOTE
+                </label>
+                {playerNotes.length === 0 ? (
+                  <div className="text-[9px] font-mono text-red-400 italic bg-black/20 p-2 rounded border border-[#5c4033]">
+                    No entries logged in journal. Write cover details first!
+                  </div>
+                ) : (
+                  <select
+                    value={synthNote1}
+                    onChange={(e) => setSynthNote1(e.target.value)}
+                    className="w-full bg-[#38251b] border border-[#5c4033] rounded px-3 py-2 text-xs text-amber-100 font-mono focus:outline-none"
+                  >
+                    <option value="">-- SELECT NOTE 1 --</option>
+                    {playerNotes.map((note, idx) => (
+                      <option key={idx} value={note}>
+                        {note.length > 50 ? `${note.slice(0, 50)}...` : note}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono text-amber-500 font-bold uppercase mb-1">
+                  2. SELECT CONTRADICTION / CORRESPONDENCE NOTE
+                </label>
+                {playerNotes.length === 0 ? (
+                  <div className="text-[9px] font-mono text-red-400 italic bg-black/20 p-2 rounded border border-[#5c4033]">
+                    No entries logged in journal. Write cover details first!
+                  </div>
+                ) : (
+                  <select
+                    value={synthNote2}
+                    onChange={(e) => setSynthNote2(e.target.value)}
+                    className="w-full bg-[#38251b] border border-[#5c4033] rounded px-3 py-2 text-xs text-amber-100 font-mono focus:outline-none"
+                  >
+                    <option value="">-- SELECT NOTE 2 --</option>
+                    {playerNotes.map((note, idx) => (
+                      <option key={idx} value={note}>
+                        {note.length > 50 ? `${note.slice(0, 50)}...` : note}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-mono text-amber-500 font-bold uppercase mb-1">
+                  3. SELECT TARGET NPC (INHABITANT BRAINTAG)
+                </label>
+                <select
+                  value={synthTargetNpcId}
+                  onChange={(e) => setSynthTargetNpcId(e.target.value)}
+                  className="w-full bg-[#38251b] border border-[#5c4033] rounded px-3 py-2 text-xs text-amber-100 font-mono focus:outline-none"
+                >
+                  <option value="blacksmith">HAGAR (BLACKSMITH)</option>
+                  <option value="guard">KAEL (GUARD)</option>
+                  <option value="merchant">SILAS (MERCHANT)</option>
+                  <option value="mayor">EVELYN (MAYOR)</option>
+                </select>
+              </div>
+
+              <div className="bg-black/30 border border-[#5c4033] rounded p-2.5 flex justify-between items-center text-[10px] font-mono text-slate-300">
+                <span>SYNTHESIS COST: <span className="text-yellow-500 font-bold">15 COINS</span></span>
+                <span>AVAILABLE: <span className="text-yellow-400 font-bold">{state.coins ?? 30} COINS</span></span>
+              </div>
+
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={handleSynthesizeRumor}
+                  disabled={!synthNote1 || !synthNote2 || (state.coins ?? 30) < 15}
+                  className="flex-1 bg-purple-800 hover:bg-purple-750 disabled:opacity-40 text-purple-100 font-mono text-xs font-bold py-2.5 rounded border border-purple-950 shadow transition cursor-pointer"
+                >
+                  [⚡ SYNTHESIZE & INJECT]
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsSynthLabOpen(false)}
+                  className="bg-[#38251b] hover:bg-[#4d3527] text-amber-200 font-mono text-xs py-2.5 px-4 rounded border border-[#5c4033] transition cursor-pointer"
+                >
+                  [CLOSE]
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
 
