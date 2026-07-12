@@ -115,6 +115,8 @@ export default function GamePage() {
   const [landingScreenActive, setLandingScreenActive] = useState<boolean>(true);
   const [musicPlaying, setMusicPlaying] = useState<boolean>(false);
   const synthRef = useRef<any>(null);
+  const [helpModeActive, setHelpModeActive] = useState<boolean>(false);
+  const [activeHelpSection, setActiveHelpSection] = useState<string | null>(null);
   
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
@@ -689,7 +691,7 @@ export default function GamePage() {
               return (
                 <path
                   key={i}
-                  d={`M50,50 L${50 + 100 * Math.cos((angle * Math.PI) / 180)},${50 + 100 * Math.sin((angle * Math.PI) / 180)} L${50 + 100 * Math.cos(((angle + 10) * Math.PI) / 180)},${50 + 100 * Math.sin(((angle + 10) * Math.PI) / 180)} Z`}
+                  d={`M50,50 L${(50 + 100 * Math.cos((angle * Math.PI) / 180)).toFixed(4)},${(50 + 100 * Math.sin((angle * Math.PI) / 180)).toFixed(4)} L${(50 + 100 * Math.cos(((angle + 10) * Math.PI) / 180)).toFixed(4)},${(50 + 100 * Math.sin(((angle + 10) * Math.PI) / 180)).toFixed(4)} Z`}
                   fill="#38251b"
                 />
               );
@@ -885,7 +887,7 @@ export default function GamePage() {
               return (
                 <path
                   key={i}
-                  d={`M50,50 L${50 + 100 * Math.cos((angle * Math.PI) / 180)},${50 + 100 * Math.sin((angle * Math.PI) / 180)} L${50 + 100 * Math.cos(((angle + 10) * Math.PI) / 180)},${50 + 100 * Math.sin(((angle + 10) * Math.PI) / 180)} Z`}
+                  d={`M50,50 L${(50 + 100 * Math.cos((angle * Math.PI) / 180)).toFixed(4)},${(50 + 100 * Math.sin((angle * Math.PI) / 180)).toFixed(4)} L${(50 + 100 * Math.cos(((angle + 10) * Math.PI) / 180)).toFixed(4)},${(50 + 100 * Math.sin(((angle + 10) * Math.PI) / 180)).toFixed(4)} Z`}
                   fill="#38251b"
                 />
               );
@@ -1124,11 +1126,22 @@ export default function GamePage() {
           </button>
         </div>
 
-        {/* Right Side: Controller prompts layout */}
-        <div className="flex items-center space-x-2 text-[10px] font-mono text-amber-600/70">
-          <span className="bg-[#38251b] px-2 py-0.5 rounded border border-[#5c4033] text-amber-300 font-bold">LT</span>
-          <span>SYSTEM</span>
-          <span className="bg-[#38251b] px-2 py-0.5 rounded border border-[#5c4033] text-amber-300 font-bold">RT</span>
+        {/* Right Side: Interactive Help Toggle */}
+        <div className="flex items-center space-x-2">
+          <button
+            type="button"
+            onClick={() => {
+              setHelpModeActive(!helpModeActive);
+              showNotification(!helpModeActive ? "HELP MODE ACTIVE. CLICK ANY '?' TO VIEW COMPONENT GUIDE." : "HELP MODE DEACTIVATED.", "info");
+            }}
+            className={`font-mono text-[9px] font-bold px-3 py-1.5 border-2 rounded transition cursor-pointer active:translate-y-0.5 ${
+              helpModeActive
+                ? "bg-amber-700 border-amber-300 text-amber-100 shadow-[0_0_8px_rgba(217,119,6,0.5)] animate-pulse"
+                : "bg-[#38251b] border-[#5c4033] text-amber-300 hover:border-amber-400 hover:text-amber-100"
+            }`}
+          >
+            ❓ {helpModeActive ? "[EXIT HELP MODE]" : "[❓ HOW TO PLAY]"}
+          </button>
         </div>
       </div>
 
@@ -1142,6 +1155,17 @@ export default function GamePage() {
                backgroundSize: '24px 24px', 
                backgroundPosition: '0 0, 12px 12px' 
              }}>
+          
+          {helpModeActive && (
+            <button
+              type="button"
+              onClick={() => setActiveHelpSection("villageMap")}
+              className="absolute top-2 right-2 z-40 w-6 h-6 rounded-full bg-amber-600 hover:bg-amber-500 border-2 border-amber-300 text-amber-100 flex items-center justify-center font-bold text-xs shadow-lg animate-bounce cursor-pointer"
+              title="Click to learn about the Village Map & NPCs"
+            >
+              ?
+            </button>
+          )}
           
           <style dangerouslySetInnerHTML={{__html: `
             @keyframes radar-sweep-line {
@@ -1357,7 +1381,17 @@ export default function GamePage() {
             </button>
 
             {/* Cozy Campfire plaza */}
-            <div className="absolute top-[42%] left-[42%] w-[16%] h-[26%] flex flex-col items-center justify-center z-10">
+            <div className="absolute top-[42%] left-[42%] w-[16%] h-[26%] flex flex-col items-center justify-center z-10 relative">
+              {helpModeActive && (
+                <button
+                  type="button"
+                  onClick={() => setActiveHelpSection("campfireSleep")}
+                  className="absolute -top-2 right-0 z-40 w-5 h-5 rounded-full bg-amber-600 border border-amber-300 text-amber-100 flex items-center justify-center font-bold text-[9px] shadow-lg animate-bounce cursor-pointer"
+                  title="How gossip night and campfire sleep works"
+                >
+                  ?
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handleAdvanceDay}
@@ -1555,7 +1589,17 @@ export default function GamePage() {
         </div>
 
         {/* Dedicated Non-Overlapping Dialogue Control Center */}
-        <div className="wood-panel p-4 flex flex-col md:flex-row gap-4 items-stretch shadow-2xl">
+        <div className="wood-panel p-4 flex flex-col md:flex-row gap-4 items-stretch shadow-2xl relative">
+          {helpModeActive && (
+            <button
+              type="button"
+              onClick={() => setActiveHelpSection("dialogueInput")}
+              className="absolute -top-3 -right-3 z-40 w-6 h-6 rounded-full bg-amber-600 hover:bg-amber-500 border-2 border-amber-300 text-amber-100 flex items-center justify-center font-bold text-xs shadow-lg animate-bounce cursor-pointer"
+              title="Click to learn how to converse with NPCs"
+            >
+              ?
+            </button>
+          )}
           
           {/* Active NPC Portrait & Status Panel */}
           <div className="w-full md:w-44 shrink-0 flex flex-col items-center bg-[#ebdcb9] border-4 border-[#38251b] rounded p-3 text-center justify-center shadow-md">
@@ -1654,7 +1698,17 @@ export default function GamePage() {
         <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-stretch">
           
           {/* Left Block: Reputation Matrix (5 cols) */}
-          <div className="md:col-span-5 wood-panel p-4 flex flex-col justify-between">
+          <div className="md:col-span-5 wood-panel p-4 flex flex-col justify-between relative">
+            {helpModeActive && (
+              <button
+                type="button"
+                onClick={() => setActiveHelpSection("relationMetrics")}
+                className="absolute -top-3 -right-3 z-40 w-6 h-6 rounded-full bg-amber-600 hover:bg-amber-500 border-2 border-amber-300 text-amber-100 flex items-center justify-center font-bold text-xs shadow-lg animate-bounce cursor-pointer"
+                title="Click to learn about relation metrics"
+              >
+                ?
+              </button>
+            )}
             <span className="font-mono text-xs text-amber-200 tracking-widest block uppercase mb-4 border-b border-[#38251b] pb-1">📊 RELATIONSHIP RECORD</span>
             
             <div className="space-y-4 font-mono text-[11px] flex-1 flex flex-col justify-center text-amber-100/90">
@@ -1698,7 +1752,21 @@ export default function GamePage() {
           </div>
 
           {/* Right Block: Chronicles Explorer Tabular Panel (7 cols) */}
-          <div className="md:col-span-7 wood-panel p-4 flex flex-col justify-between">
+          <div className="md:col-span-7 wood-panel p-4 flex flex-col justify-between relative">
+            {helpModeActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeConsoleTab === "vault") setActiveHelpSection("dbDump");
+                  else if (activeConsoleTab === "journal") setActiveHelpSection("myJournal");
+                  else setActiveHelpSection("relationMetrics");
+                }}
+                className="absolute -top-3 -right-3 z-40 w-6 h-6 rounded-full bg-amber-600 hover:bg-amber-500 border-2 border-amber-300 text-amber-100 flex items-center justify-center font-bold text-xs shadow-lg animate-bounce cursor-pointer"
+                title="Click to learn about this console tab"
+              >
+                ?
+              </button>
+            )}
             
             {/* Console Tab Selector */}
             <div className="flex border-b border-[#38251b] pb-2 mb-3 justify-between items-center shrink-0">
@@ -2181,6 +2249,105 @@ export default function GamePage() {
                   [CLOSE]
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* Interactive Guide explanation Modal */}
+      {activeHelpSection && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs select-none">
+          <div className="relative max-w-md w-full bg-[#ebdcb9] border-4 border-[#38251b] rounded-lg p-6 shadow-[8px_8px_0px_#38251b] text-[#382c22] font-mono flex flex-col gap-4 animate-float-gentle">
+            <div className="absolute top-2 left-3 text-[9px] font-bold text-[#855b32]">SYSTEM GUIDE INSTRUCTION</div>
+            
+            <div className="flex gap-4 items-center border-b-2 border-[#38251b]/20 pb-3 mt-2">
+              <div className="w-14 h-14 rounded border-2 border-[#38251b] bg-black shrink-0 relative overflow-hidden">
+                <img src="/portraits/mascot.png" alt="Memo" className="w-full h-full object-cover pixelated" />
+              </div>
+              <div className="text-left">
+                <h3 className="font-bold text-sm text-[#a84424] uppercase tracking-wider">
+                  {activeHelpSection === "villageMap" && "VILLAGE MAP & NPCs"}
+                  {activeHelpSection === "campfireSleep" && "CAMPFIRE & SLEEP PROGRESS"}
+                  {activeHelpSection === "relationMetrics" && "REPUTATION MATRIX"}
+                  {activeHelpSection === "dbDump" && "VECTOR DATABASE"}
+                  {activeHelpSection === "myJournal" && "EXPLORER'S JOURNAL"}
+                  {activeHelpSection === "dialogueInput" && "NPC DIALOGUE INTERFACE"}
+                </h3>
+                <span className="text-[8px] font-bold text-[#855b32]">EXPLAINED BY MEMO THE AI GUIDE</span>
+              </div>
+            </div>
+
+            <div className="text-xs leading-relaxed text-[#4a3b2c] bg-[#fcf8ef] border-2 border-[#6b533e]/30 p-3.5 rounded max-h-[220px] overflow-y-auto">
+              {activeHelpSection === "villageMap" && (
+                <div className="space-y-2">
+                  <p>This JRPG map displays the 4 virtual inhabitants. Click on a node house to navigate and chat:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li><strong>Forge (Hagar):</strong> Blacksmith who respects solid values.</li>
+                    <li><strong>Barracks (Kael):</strong> Watch Captain monitoring contradictions.</li>
+                    <li><strong>Exchange (Silas):</strong> Trader who buys/sells rumors for gold.</li>
+                    <li><strong>Council Hall (Evelyn):</strong> Town Mayor monitoring village corruption.</li>
+                  </ul>
+                  <p className="mt-2 text-[10px] text-amber-800 font-bold">💡 Tip: Walk to a character to pull up their personal memory log.</p>
+                </div>
+              )}
+              {activeHelpSection === "campfireSleep" && (
+                <div className="space-y-2">
+                  <p>Advancing the day triggers Gossip Night:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>Sleeping costs <strong>10 coins</strong>.</li>
+                    <li>Overnight, NPCs exchange rumors you told them.</li>
+                    <li>If a rumor from Silas contradicts what you told Hagar, suspicion levels rise.</li>
+                  </ul>
+                  <p className="mt-2 text-[10px] text-amber-800 font-bold">💡 Warning: Keep your lies consistent before sleeping!</p>
+                </div>
+              )}
+              {activeHelpSection === "relationMetrics" && (
+                <div className="space-y-2">
+                  <p>Reputation meters show the active inhabitant's stance:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li><strong>Trust:</strong> Higher trust stops NPC suspicion triggers.</li>
+                    <li><strong>Respect:</strong> Boosts cover story strength.</li>
+                    <li><strong>Fear:</strong> Reduces rumor spreading speed.</li>
+                    <li><strong>Friendship:</strong> Reaching 80% friendship across all leads to a Peaceful consensus victory!</li>
+                  </ul>
+                </div>
+              )}
+              {activeHelpSection === "dbDump" && (
+                <div className="space-y-2">
+                  <p>The vector memory database of the active inhabitant:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li><strong>Query Vector (5 Coins):</strong> Execute semantic keyword checks in their brain nodes.</li>
+                    <li><strong>Oblivion Potion (10-20 Coins):</strong> Wipes any recorded statement before it leaks.</li>
+                  </ul>
+                </div>
+              )}
+              {activeHelpSection === "myJournal" && (
+                <div className="space-y-2">
+                  <p>Your Journal records all your cover details:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>Review statements you told other characters.</li>
+                    <li>Check recorded notes so you don't make contradicting claims!</li>
+                  </ul>
+                </div>
+              )}
+              {activeHelpSection === "dialogueInput" && (
+                <div className="space-y-2">
+                  <p>Use the chat bar to talk to characters:</p>
+                  <ul className="list-disc pl-4 space-y-1">
+                    <li>Type inputs and click Transmit.</li>
+                    <li>Your words are parsed by the AI and saved as vectors.</li>
+                  </ul>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-1">
+              <button
+                type="button"
+                onClick={() => setActiveHelpSection(null)}
+                className="bg-[#a84424] hover:bg-[#c2512f] text-amber-100 font-mono text-xs font-bold px-6 py-2.5 rounded border-2 border-[#38251b] shadow-[2px_2px_0px_#38251b] active:translate-y-0.5 cursor-pointer"
+              >
+                [CLOSE GUIDE]
+              </button>
             </div>
           </div>
         </div>
