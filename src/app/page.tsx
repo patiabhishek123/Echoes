@@ -47,21 +47,43 @@ class JRPGSynth {
       [59, 62, 66, 69]  // Bm7
     ];
 
-    const playNote = (midi: number, time: number, duration: number, type: OscillatorType = "sine", vol = 0.05) => {
+    const playNote = (midi: number, time: number, duration: number, type: OscillatorType = "sine", vol = 0.05, isMetallic = true) => {
       if (!this.ctx) return;
-      const osc = this.ctx.createOscillator();
+      const carrier = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       
-      osc.type = type;
-      osc.frequency.setValueAtTime(440 * Math.pow(2, (midi - 69) / 12), time);
+      const carrierFreq = 440 * Math.pow(2, (midi - 69) / 12);
+      carrier.type = type;
+      carrier.frequency.setValueAtTime(carrierFreq, time);
       
       gain.gain.setValueAtTime(vol, time);
       gain.gain.exponentialRampToValueAtTime(0.00001, time + duration);
       
-      osc.connect(gain);
+      carrier.connect(gain);
       gain.connect(this.ctx.destination);
-      osc.start(time);
-      osc.stop(time + duration);
+      
+      if (isMetallic) {
+        const modulator = this.ctx.createOscillator();
+        const modulatorGain = this.ctx.createGain();
+        
+        modulator.type = "sine";
+        // 3.5x ratio creates inharmonic metallic sidebands (bell chime)
+        modulator.frequency.setValueAtTime(carrierFreq * 3.5, time);
+        
+        // Deep modulation depth fading out
+        const modIndex = carrierFreq * 1.8;
+        modulatorGain.gain.setValueAtTime(modIndex, time);
+        modulatorGain.gain.exponentialRampToValueAtTime(0.0001, time + duration * 0.7);
+        
+        modulator.connect(modulatorGain);
+        modulatorGain.connect(carrier.frequency);
+        
+        modulator.start(time);
+        modulator.stop(time + duration);
+      }
+      
+      carrier.start(time);
+      carrier.stop(time + duration);
     };
 
     const scheduler = () => {
@@ -71,23 +93,23 @@ class JRPGSynth {
       const chord = chords[chordIndex];
       const noteIndex = step % 16;
 
-      // Bass notes on step 0, 4, 8, 12
+      // Bass notes (Keep bass pure/warm triangle)
       if (noteIndex % 4 === 0) {
-        playNote(chord[0] - 12, this.ctx.currentTime, secPerBeat * 2.0, "triangle", 0.07);
+        playNote(chord[0] - 12, this.ctx.currentTime, secPerBeat * 2.0, "triangle", 0.07, false);
       }
 
-      // Arpeggios on steps
+      // Arpeggios (Metallic chime)
       const arpPattern = [0, 2, 1, 3, 2, 0, 1, 2];
       const arpNote = chord[arpPattern[noteIndex % arpPattern.length]];
       if (noteIndex % 2 === 0) {
-        playNote(arpNote, this.ctx.currentTime, secPerBeat * 0.4, "sine", 0.04);
+        playNote(arpNote, this.ctx.currentTime, secPerBeat * 0.4, "sine", 0.035, true);
       }
 
-      // Melody
+      // Melody (Metallic lead)
       if (noteIndex === 3 || noteIndex === 7 || noteIndex === 11 || noteIndex === 14) {
         const melodyMelodies = [72, 74, 76, 79, 81];
-        const mel = melodyMelodies[Math.floor(Math.random() * melodyMelodies.length)];
-        playNote(mel, this.ctx.currentTime, secPerBeat * 0.8, "sine", 0.03);
+        const mel = melodyMelodies[Math.floor(Math.random() * (melodyMelodies.length))];
+        playNote(mel, this.ctx.currentTime, secPerBeat * 0.8, "sine", 0.025, true);
       }
 
       step += 1;
@@ -1632,7 +1654,7 @@ export default function GamePage() {
                 <span className="text-[9px] text-[#855b32]/60">DAY {state.day}</span>
               </div>
               
-              <p className="text-[17px] leading-snug font-mono select-text font-medium text-[#2d1b11]" style={{ fontFamily: 'var(--font-vt323)' }}>
+              <p className="text-[23px] leading-snug font-mono select-text font-medium text-[#2d1b11]" style={{ fontFamily: 'var(--font-vt323)' }}>
                 {isTalking ? (
                   <span className="opacity-60 italic text-slate-500">Loading response text from memory Core...</span>
                 ) : (
@@ -1650,12 +1672,12 @@ export default function GamePage() {
                   onChange={(e) => setInputValue(e.target.value)}
                   placeholder={`SPEAK TO ${selectedNpc.name.toUpperCase()} (e.g. 'I am Sir Galahad')`}
                   disabled={isTalking || state.gameEnded}
-                  className="flex-1 bg-white/70 border-2 border-[#6b533e] focus:border-[#855b32] rounded px-3 py-2 text-xs text-[#382c22] placeholder-amber-900/50 focus:outline-none font-mono tracking-wider transition uppercase"
+                  className="flex-1 bg-white/70 border-2 border-[#6b533e] focus:border-[#855b32] rounded px-3 py-2 text-sm text-[#382c22] placeholder-amber-900/50 focus:outline-none font-mono tracking-wider transition uppercase"
                 />
                 <button
                   type="submit"
                   disabled={!inputValue.trim() || isTalking || state.gameEnded}
-                  className="bg-[#855b32] hover:bg-[#a87442] text-amber-100 font-mono text-xs font-bold px-4 py-2 rounded shadow transition shrink-0 cursor-pointer border-2 border-[#5c4033]"
+                  className="bg-[#855b32] hover:bg-[#a87442] text-amber-100 font-mono text-sm font-bold px-4 py-2 rounded shadow transition shrink-0 cursor-pointer border-2 border-[#5c4033]"
                 >
                   [TRANSMIT]
                 </button>
@@ -1711,7 +1733,7 @@ export default function GamePage() {
             )}
             <span className="font-mono text-xs text-amber-200 tracking-widest block uppercase mb-4 border-b border-[#38251b] pb-1">📊 RELATIONSHIP RECORD</span>
             
-            <div className="space-y-4 font-mono text-[11px] flex-1 flex flex-col justify-center text-amber-100/90">
+            <div className="space-y-4 font-mono text-[13px] flex-1 flex flex-col justify-center text-amber-100/90">
               <div className="flex justify-between items-center">
                 <span>TRUST:</span>
                 <div className="flex items-center space-x-2">
@@ -1774,7 +1796,7 @@ export default function GamePage() {
                 <button
                   type="button"
                   onClick={() => setActiveConsoleTab("mind")}
-                  className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
+                  className={`font-mono text-xs px-3 py-1.5 border rounded cursor-pointer transition ${
                     activeConsoleTab === "mind"
                       ? "bg-amber-800/20 border-amber-500 text-amber-200"
                       : "border-transparent text-amber-800 hover:text-amber-600"
@@ -1785,7 +1807,7 @@ export default function GamePage() {
                 <button
                   type="button"
                   onClick={() => setActiveConsoleTab("vault")}
-                  className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
+                  className={`font-mono text-xs px-3 py-1.5 border rounded cursor-pointer transition ${
                     activeConsoleTab === "vault"
                       ? "bg-amber-800/20 border-amber-500 text-amber-200"
                       : "border-transparent text-amber-800 hover:text-amber-600"
@@ -1799,7 +1821,7 @@ export default function GamePage() {
                     setActiveConsoleTab("journal");
                     fetchJournalNotes();
                   }}
-                  className={`font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition ${
+                  className={`font-mono text-xs px-3 py-1.5 border rounded cursor-pointer transition ${
                     activeConsoleTab === "journal"
                       ? "bg-amber-800/20 border-amber-500 text-amber-200"
                       : "border-transparent text-amber-800 hover:text-amber-600"
@@ -1810,7 +1832,7 @@ export default function GamePage() {
                 <button
                   type="button"
                   onClick={() => setIsSynthLabOpen(true)}
-                  className="font-mono text-[10px] px-3 py-1 border rounded cursor-pointer transition border-purple-800 text-purple-400 hover:bg-purple-950/20"
+                  className="font-mono text-xs px-3 py-1.5 border rounded cursor-pointer transition border-purple-800 text-purple-400 hover:bg-purple-950/20"
                 >
                   🧪 [RUMOR LAB]
                 </button>

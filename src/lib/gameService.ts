@@ -216,6 +216,7 @@ export async function resetGame(): Promise<GameState> {
   };
 
   saveGameState(newState);
+  resetMockMemories(newState.sessionId);
 
   // Seed the fresh Supermemory tags in the background
   for (const [npcId, memories] of Object.entries(SEED_MEMORIES)) {
@@ -260,6 +261,120 @@ export function failMinigame(cost: number): GameState {
   return state;
 }
 
+// Local Mock Memory Fallback System Definitions
+interface MockMemory {
+  id: string;
+  containerTag: string;
+  content: string;
+}
+
+const MOCK_MEMORIES_FILE_PATH = path.join(process.cwd(), "mock_memories.json");
+
+function getMockMemories(): MockMemory[] {
+  if (!fs.existsSync(MOCK_MEMORIES_FILE_PATH)) {
+    const memories: MockMemory[] = [];
+    try {
+      const state = getGameState();
+      const sessionId = state.sessionId;
+      for (const [npcId, seedContents] of Object.entries(SEED_MEMORIES)) {
+        const containerTag = `${npcId}_${sessionId}`;
+        for (const content of seedContents) {
+          memories.push({
+            id: `mock_doc_${Math.random().toString(36).substring(2, 11)}`,
+            containerTag,
+            content
+          });
+        }
+      }
+      memories.push({
+        id: `mock_doc_${Math.random().toString(36).substring(2, 11)}`,
+        containerTag: `player_${sessionId}`,
+        content: "Entered the village of Echoes on Day 1. Looking to blend in and learn secrets."
+      });
+      fs.writeFileSync(MOCK_MEMORIES_FILE_PATH, JSON.stringify(memories, null, 2), "utf-8");
+    } catch (e) {
+      console.error("Error seeding initial mock memories:", e);
+    }
+    return memories;
+  }
+  try {
+    const data = fs.readFileSync(MOCK_MEMORIES_FILE_PATH, "utf-8");
+    return JSON.parse(data);
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveMockMemories(memories: MockMemory[]) {
+  try {
+    fs.writeFileSync(MOCK_MEMORIES_FILE_PATH, JSON.stringify(memories, null, 2), "utf-8");
+  } catch (e) {
+    console.error("Error saving mock memories:", e);
+  }
+}
+
+function resetMockMemories(sessionId: string) {
+  const memories: MockMemory[] = [];
+  for (const [npcId, seedContents] of Object.entries(SEED_MEMORIES)) {
+    const containerTag = `${npcId}_${sessionId}`;
+    for (const content of seedContents) {
+      memories.push({
+        id: `mock_doc_${Math.random().toString(36).substring(2, 11)}`,
+        containerTag,
+        content
+      });
+    }
+  }
+  memories.push({
+    id: `mock_doc_${Math.random().toString(36).substring(2, 11)}`,
+    containerTag: `player_${sessionId}`,
+    content: "Entered the village of Echoes on Day 1. Looking to blend in and learn secrets."
+  });
+  saveMockMemories(memories);
+}
+
+function addMockMemory(containerTag: string, content: string) {
+  const memories = getMockMemories();
+  if (memories.some(m => m.containerTag === containerTag && m.content === content)) return;
+  memories.push({
+    id: `mock_doc_${Math.random().toString(36).substring(2, 11)}`,
+    containerTag,
+    content
+  });
+  saveMockMemories(memories);
+}
+
+function getMockMemoriesForTag(containerTag: string, query: string): string[] {
+  const memories = getMockMemories();
+  let filtered = memories.filter(m => m.containerTag === containerTag);
+  if (query) {
+    const q = query.toLowerCase();
+    filtered = filtered.filter(m => m.content.toLowerCase().includes(q));
+  }
+  return filtered.map(m => m.content);
+}
+
+function getMockMemoriesWithIdsForTag(containerTag: string, query: string): MemoryItem[] {
+  const memories = getMockMemories();
+  let filtered = memories.filter(m => m.containerTag === containerTag);
+  if (query) {
+    const q = query.toLowerCase();
+    filtered = filtered.filter(m => m.content.toLowerCase().includes(q));
+  }
+  return filtered.map(m => ({ id: m.id, content: m.content }));
+}
+
+function deleteMockMemory(docId: string): boolean {
+  const memories = getMockMemories();
+  const index = memories.findIndex(m => m.id === docId);
+  if (index !== -1) {
+    memories.splice(index, 1);
+    saveMockMemories(memories);
+    return true;
+  }
+  return false;
+}
+
 // Supermemory API Helpers
 async function addMemoryToSupermemory(containerTag: string, content: string): Promise<void> {
   try {
@@ -273,10 +388,11 @@ async function addMemoryToSupermemory(containerTag: string, content: string): Pr
     });
     
     if (!response.ok) {
-      console.error(`Supermemory add error: ${response.status} ${response.statusText}`);
+      console.warn(`Supermemory add error: ${response.status}. Using mock fallback.`);
+      addMockMemory(containerTag, content);
     }
   } catch (error) {
-    console.error("Failed to add memory to Supermemory:", error);
+    addMockMemory(containerTag, content);
   }
 }
 
@@ -292,8 +408,8 @@ async function getNPCMemories(containerTag: string, query: string): Promise<stri
     });
 
     if (!response.ok) {
-      console.error(`Supermemory profile error: ${response.status} ${response.statusText}`);
-      return [];
+      console.warn(`Supermemory profile warning: ${response.status}. Using mock fallback.`);
+      return getMockMemoriesForTag(containerTag, query);
     }
 
     const data = await response.json();
@@ -301,12 +417,10 @@ async function getNPCMemories(containerTag: string, query: string): Promise<stri
     const staticMemories = data?.profile?.static || [];
     const searchResults = data?.searchResults?.results?.map((r: any) => r.memory) || [];
 
-    // Combine unique memories
     const all = Array.from(new Set([...staticMemories, ...dynamicMemories, ...searchResults]));
     return all as string[];
   } catch (error) {
-    console.error("Failed to fetch memories from Supermemory:", error);
-    return [];
+    return getMockMemoriesForTag(containerTag, query);
   }
 }
 
@@ -323,8 +437,8 @@ export async function getNPCMemoriesWithIds(containerTag: string, query: string 
     });
 
     if (!response.ok) {
-      console.error(`Supermemory profile error: ${response.status} ${response.statusText}`);
-      return [];
+      console.warn(`Supermemory profile with IDs warning: ${response.status}. Using mock fallback.`);
+      return getMockMemoriesWithIdsForTag(containerTag, query);
     }
 
     const data = await response.json();
@@ -345,8 +459,7 @@ export async function getNPCMemoriesWithIds(containerTag: string, query: string 
 
     return items;
   } catch (error) {
-    console.error("Failed to fetch memories with IDs from Supermemory:", error);
-    return [];
+    return getMockMemoriesWithIdsForTag(containerTag, query);
   }
 }
 
@@ -372,10 +485,13 @@ export async function deleteSupermemoryDocument(docId: string): Promise<boolean>
         "Authorization": `Bearer ${supermemoryKey}`
       }
     });
-    return response.status === 204 || response.status === 200;
+    if (response.status === 204 || response.status === 200) {
+      deleteMockMemory(docId);
+      return true;
+    }
+    return deleteMockMemory(docId);
   } catch (error) {
-    console.error("Failed to delete document from Supermemory:", error);
-    return false;
+    return deleteMockMemory(docId);
   }
 }
 
