@@ -11,10 +11,10 @@
       "role": "Blacksmith",
       "portrait": "/portraits/blacksmith.png",
       "metrics": {
-        "trust": 50,
-        "respect": 45,
+        "trust": 46,
+        "respect": 32,
         "fear": 12,
-        "friendship": 30
+        "friendship": 24
       },
       "relationships": "Close friend of Captain Kael (Guard). Dislikes Silas the Merchant.",
       "personality": "Gruff, hard-working, honest, and blunt. Values sweat, steel, and absolute honesty. Despises sweet talkers and inconsistency.",
@@ -26,10 +26,10 @@
       "role": "Captain of the Guard",
       "portrait": "/portraits/guard.png",
       "metrics": {
-        "trust": 40,
+        "trust": 35,
         "respect": 50,
-        "fear": 20,
-        "friendship": 20
+        "fear": 25,
+        "friendship": 16
       },
       "relationships": "Close friend of Hagar the Blacksmith. Suspicious of outsiders.",
       "personality": "Stern, vigilant, orderly, and highly disciplined. Values consistency, law, and security. Suspicious of anyone whose story changes or who acts shifty.",
@@ -87,9 +87,60 @@
         "sender": "npc",
         "content": "A knight, you say? Your hands look a bit clean for someone who claims to wear steel for a living, but I'll reserve my judgment. If you're indeed a knight, you'll find no soft treatment or sweet talk in my forge.",
         "timestamp": "07:16 PM"
+      },
+      {
+        "sender": "player",
+        "content": "I am Abhishek",
+        "timestamp": "04:30 AM"
+      },
+      {
+        "sender": "npc",
+        "content": "Abhishek, eh? Sounds foreign. Well, I'm Hagar. Unless you've got iron to mend or coal to haul, state your business and make it quick.",
+        "timestamp": "04:30 AM"
+      },
+      {
+        "sender": "player",
+        "content": "I have come to work as an intern at you barrack.",
+        "timestamp": "04:31 AM"
+      },
+      {
+        "sender": "npc",
+        "content": "This is a forge, not the barracks, and we take apprentices, not 'interns'—whatever that fancy word means. If you're looking for Captain Kael, go find him at the guardhouse, though he has even less patience for soft hands and strange talk than I do.",
+        "timestamp": "04:31 AM"
+      },
+      {
+        "sender": "player",
+        "content": "i had been to captain kael he said i am the new knight named ryan",
+        "timestamp": "04:34 AM"
+      },
+      {
+        "sender": "npc",
+        "content": "Kael called you a knight, did he? I'll ask him myself next time we share a cask, but you don't look like you've ever swung a real sword.",
+        "timestamp": "04:34 AM"
       }
     ],
-    "guard": [],
+    "guard": [
+      {
+        "sender": "player",
+        "content": "Hey i AM Hasrsh and i have come for a job",
+        "timestamp": "04:32 AM"
+      },
+      {
+        "sender": "npc",
+        "content": "An outsider seeking work, is it? Speak clearly and state your business, for the Guard has no room for idle hands. What skills do you bring to Echoes, if 'Hasrsh' is indeed your name?",
+        "timestamp": "04:32 AM"
+      },
+      {
+        "sender": "player",
+        "content": "i want to work as guard",
+        "timestamp": "04:33 AM"
+      },
+      {
+        "sender": "npc",
+        "content": "You walk into Echoes, a complete stranger, and expect me to hand you a spear and trust you with our walls? The guard requires discipline, loyalty, and a known history—none of which you have proven to me yet.",
+        "timestamp": "04:33 AM"
+      }
+    ],
     "merchant": [],
     "mayor": []
   },
