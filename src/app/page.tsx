@@ -194,9 +194,16 @@ export default function GamePage() {
 
   const chatEndRef = useRef<HTMLDivElement>(null);
 
+  const defaultGreetings: Record<string, string> = {
+    blacksmith: "Hagar stands by the anvil, wiping soot from his brow. Speak to him to begin your conversation.",
+    guard: "Captain Kael watches you with cold, vigilant eyes. Speak to him to begin your conversation.",
+    merchant: "Silas rubs his hands together with a sly smile. Speak to him to begin your conversation.",
+    mayor: "Mayor Evelyn stands with quiet, formidable dignity. Speak to her to begin your conversation.",
+  };
+
   const conversationsForTypewriter = state?.conversations[selectedNpcId] || [];
   const latestNpcMessage = conversationsForTypewriter.slice().reverse().find(c => c.sender === "npc")?.content || 
-    `Select Hagar, Kael, Silas, or Evelyn to converse with them and discover their memories.`;
+    (defaultGreetings[selectedNpcId] || `Select Hagar, Kael, Silas, or Evelyn to converse with them and discover their memories.`);
 
   // Start music helper
   const toggleMusic = () => {
