@@ -10,7 +10,11 @@ const genAI = new GoogleGenerativeAI(geminiApiKey);
 const supermemoryUrl = process.env.SUPERMEMORY_API_URL || "http://localhost:6767";
 const supermemoryKey = process.env.SUPERMEMORY_API_KEY || "";
 
-const STATE_FILE_PATH = path.join(process.cwd(), "gamestate.json");
+// For serverless/Vercel support, write to /tmp since the project root is read-only
+const isServerless = process.env.VERCEL === "1" || process.env.NODE_ENV === "production";
+const STATE_FILE_PATH = isServerless
+  ? path.join("/tmp", "gamestate.json")
+  : path.join(process.cwd(), "gamestate.json");
 
 export interface NPCMetrics {
   trust: number;
@@ -268,7 +272,9 @@ interface MockMemory {
   content: string;
 }
 
-const MOCK_MEMORIES_FILE_PATH = path.join(process.cwd(), "mock_memories.json");
+const MOCK_MEMORIES_FILE_PATH = isServerless
+  ? path.join("/tmp", "mock_memories.json")
+  : path.join(process.cwd(), "mock_memories.json");
 
 function getMockMemories(): MockMemory[] {
   if (!fs.existsSync(MOCK_MEMORIES_FILE_PATH)) {
@@ -584,7 +590,7 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
 `;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
     const result = await model.generateContent(systemPrompt);
     const responseText = result.response.text().trim();
     
@@ -730,7 +736,7 @@ Return your answer as a JSON object matching this schema (Return ONLY JSON, no m
 `;
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const result = await model.generateContent(prompt);
       const responseText = result.response.text().trim();
       
