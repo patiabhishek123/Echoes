@@ -1,7 +1,7 @@
 {
   "sessionId": "9l153ztm",
-  "day": 1,
-  "coins": 30,
+  "day": 2,
+  "coins": 45,
   "gameEnded": false,
   "endingType": null,
   "npcs": {
@@ -41,10 +41,10 @@
       "role": "Merchant",
       "portrait": "/portraits/merchant.png",
       "metrics": {
-        "trust": 60,
+        "trust": 65,
         "respect": 30,
         "fear": 5,
-        "friendship": 40
+        "friendship": 45
       },
       "relationships": "Always looking for trade secrets. Finds Mayor Evelyn intimidating.",
       "personality": "Sly, charismatic, gossipy, and greedy. Loves gold, rumors, and knowing things others don't. Can be bribed with info or promises, but will sell out secrets just as fast.",
@@ -141,9 +141,45 @@
         "timestamp": "04:33 AM"
       }
     ],
-    "merchant": [],
+    "merchant": [
+      {
+        "sender": "player",
+        "content": "I am Abhishek",
+        "timestamp": "04:49 AM"
+      },
+      {
+        "sender": "npc",
+        "content": "Abhishek, is it? A fine name, though a rare one in these quiet parts. Tell me, friend, what brings a traveler like yourself to our humble village—surely you're hunting for more than just our meager scenery?",
+        "timestamp": "04:49 AM"
+      }
+    ],
     "mayor": []
   },
-  "gossipLogs": [],
-  "corruption": 15
+  "gossipLogs": [
+    {
+      "day": 1,
+      "fromNpc": "blacksmith",
+      "toNpc": "guard",
+      "rumor": "Pull up a chair, Kael, because you won't believe the bold-faced liar that wandered into my forge today. First, he tells me his name is Abhishek. Then, the fool claims you personally vouched for him as some new knight named Ryan, babbling about being an 'intern' at your barracks! So tell me, did you actually dub some soft-handed stranger, or is this rat just spinning tales using your name?"
+    },
+    {
+      "day": 1,
+      "fromNpc": "guard",
+      "toNpc": "blacksmith",
+      "rumor": "I knew that scoundrel was bad news the moment he set foot in Echoes! Before he slunk into your forge, he came to me claiming his name was 'Hasrsh' and had the absolute nerve to demand I hand him a spear and make him a guard. I laughed him off, and the desperate rat obviously ran straight to you to spin those pathetic lies about me vouching for some 'Knight Ryan'!"
+    },
+    {
+      "day": 1,
+      "fromNpc": "merchant",
+      "toNpc": "blacksmith",
+      "rumor": "Keep your eyes on that new traveler, Abhishek, Hagar. I tried to pry some details out of him about what brings him to Echoes, but the stranger is acting altogether too mysterious, keeping his business close to his chest. Mark my words, a man who hides his purpose so carefully is either running from a heavy debt, or carrying secrets worth a fortune."
+    },
+    {
+      "day": 1,
+      "fromNpc": "mayor",
+      "toNpc": "merchant",
+      "rumor": "Between you and me, Silas, that new stranger is acting entirely too mysterious. They've been dodging my questions about where they came from, and I caught them snooping around the edge of the woods near dusk. You'd best keep your eyes open and your coin purse tight until we figure out what they are really after."
+    }
+  ],
+  "corruption": 0
 }

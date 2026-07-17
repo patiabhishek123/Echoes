@@ -440,6 +440,56 @@ export default function ThreeDMap({
         }
       }
     );
+    // --- 7b. Render NPC Character Avatars ---
+    const npcStandCoordinates = {
+      blacksmith: { x: -3.0, z: -2.0 },
+      guard: { x: 3.0, z: -2.0 },
+      merchant: { x: -3.0, z: 2.0 },
+      mayor: { x: 3.0, z: 2.0 },
+    };
+
+    const npcColors = {
+      blacksmith: { body: "#e67e22", visor: "#e74c3c" }, // Hagar (Orange / red)
+      guard: { body: "#34495e", visor: "#1abc9c" },      // Kael (Dark gray / teal)
+      merchant: { body: "#f1c40f", visor: "#2ecc71" },   // Silas (Gold / green)
+      mayor: { body: "#9b59b6", visor: "#e74c3c" },      // Evelyn (Purple / red)
+    };
+
+    Object.entries(npcStandCoordinates).forEach(([id, coords]) => {
+      const npcGroup = new THREE.Group();
+      npcGroup.position.set(coords.x, 0.05, coords.z);
+      scene.add(npcGroup);
+
+      // Body (similar cylinder structure)
+      const npcBodyGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.5, 12);
+      const npcBodyMat = new THREE.MeshLambertMaterial({ color: npcColors[id as keyof typeof npcColors].body });
+      const npcBody = new THREE.Mesh(npcBodyGeo, npcBodyMat);
+      npcBody.position.y = 0.25;
+      npcBody.castShadow = true;
+      npcGroup.add(npcBody);
+
+      // Visor
+      const npcVisorGeo = new THREE.BoxGeometry(0.25, 0.08, 0.1);
+      const npcVisorMat = new THREE.MeshBasicMaterial({ color: npcColors[id as keyof typeof npcColors].visor });
+      const npcVisor = new THREE.Mesh(npcVisorGeo, npcVisorMat);
+      npcVisor.position.set(0, 0.13, 0.16);
+      npcBody.add(npcVisor);
+
+      // Legs
+      const npcLegGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.18, 8);
+      const npcLegMat = new THREE.MeshLambertMaterial({ color: "#222222" });
+      const leftNpcLeg = new THREE.Mesh(npcLegGeo, npcLegMat);
+      leftNpcLeg.position.set(-0.08, -0.09, 0);
+      npcBody.add(leftNpcLeg);
+
+      const rightNpcLeg = leftNpcLeg.clone();
+      rightNpcLeg.position.x = 0.08;
+      npcBody.add(rightNpcLeg);
+
+      // Rotate NPC to face the campfire
+      const angle = Math.atan2(-coords.x, -coords.z);
+      npcGroup.rotation.y = angle;
+    });
 
     // --- 8. CENTRAL CAMPFIRE & SLEEP TRIGGER ---
     const campfireGroup = new THREE.Group();
@@ -547,11 +597,19 @@ export default function ThreeDMap({
     };
 
         // --- 11. Player Mesh & Walking Logic ---
-    const activeNPCCoordinates: Record<string, { x: number; z: number }> = {
+    const buildingCoordinates: Record<string, { x: number; z: number }> = {
       blacksmith: { x: -3.8, z: -2.8 },
       guard: { x: 3.8, z: -2.8 },
       merchant: { x: -3.8, z: 2.8 },
       mayor: { x: 3.8, z: 2.8 },
+    };
+
+    const playerStandCoordinates: Record<string, { x: number; z: number }> = {
+      blacksmith: { x: -2.0, z: -1.2 },
+      guard: { x: 2.0, z: -1.2 },
+      merchant: { x: -2.0, z: 1.2 },
+      mayor: { x: 2.0, z: 1.2 },
+      campfire: { x: 0, z: 0.8 },
     };
 
     // Track active target selection
@@ -559,42 +617,42 @@ export default function ThreeDMap({
 
     // Player Group
     const playerGroup = new THREE.Group();
-    const startCoords = activeNPCCoordinates[activeNpcId] || { x: 0, z: 0 };
+    const startCoords = playerStandCoordinates[activeNpcId] || playerStandCoordinates.campfire;
     playerGroup.position.set(startCoords.x, 0.05, startCoords.z);
     scene.add(playerGroup);
 
     // Player Body (capsule / cylinder)
-    const bodyGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.45, 12);
+    const bodyGeo = new THREE.CylinderGeometry(0.24, 0.24, 0.6, 12);
     const bodyMat = new THREE.MeshLambertMaterial({ color: "#00f0ff" });
     const playerBody = new THREE.Mesh(bodyGeo, bodyMat);
-    playerBody.position.y = 0.225;
+    playerBody.position.y = 0.3;
     playerBody.castShadow = true;
     playerGroup.add(playerBody);
 
     // Player Visor/Face
-    const visorGeo = new THREE.BoxGeometry(0.25, 0.08, 0.1);
+    const visorGeo = new THREE.BoxGeometry(0.3, 0.1, 0.1);
     const visorMat = new THREE.MeshBasicMaterial({ color: "#ffffff" });
     const visor = new THREE.Mesh(visorGeo, visorMat);
-    visor.position.set(0, 0.12, 0.16); // Face forward (+Z direction)
+    visor.position.set(0, 0.16, 0.2); // Face forward (+Z direction)
     playerBody.add(visor);
 
     // Left Leg
-    const legGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.18, 8);
+    const legGeo = new THREE.CylinderGeometry(0.06, 0.06, 0.22, 8);
     const legMat = new THREE.MeshLambertMaterial({ color: "#00b0df" });
     const leftLeg = new THREE.Mesh(legGeo, legMat);
-    leftLeg.position.set(-0.08, -0.09, 0); // attached at hips
+    leftLeg.position.set(-0.1, -0.3, 0); // attached at hips
     playerBody.add(leftLeg);
 
     // Right Leg
     const rightLeg = leftLeg.clone();
-    rightLeg.position.x = 0.08;
+    rightLeg.position.x = 0.1;
     playerBody.add(rightLeg);
 
     // Floating YOU marker above player
-    const markerGeo = new THREE.ConeGeometry(0.1, 0.22, 4);
+    const markerGeo = new THREE.ConeGeometry(0.18, 0.35, 4);
     const markerMat = new THREE.MeshBasicMaterial({ color: "#00f0ff" });
     const marker = new THREE.Mesh(markerGeo, markerMat);
-    marker.position.y = 0.8;
+    marker.position.y = 1.1;
     marker.rotation.z = Math.PI; // point down
     playerGroup.add(marker);
 
@@ -710,7 +768,7 @@ export default function ThreeDMap({
       // Check for changes in selection
       const targetNpcId = selectedNpcIdRef.current;
       if (targetNpcId !== activeNpcId) {
-        const dest = activeNPCCoordinates[targetNpcId];
+        const dest = playerStandCoordinates[targetNpcId];
         if (dest) {
           waypoints = getPathWaypoints(playerGroup.position.x, playerGroup.position.z, dest.x, dest.z);
         }
@@ -790,7 +848,7 @@ export default function ThreeDMap({
       }
 
       // Keep selection spot and ring matching active target
-      const coords = activeNPCCoordinates[activeNpcId];
+      const coords = buildingCoordinates[activeNpcId];
       if (coords) {
         selectionRing.visible = true;
         selectionRing.position.set(coords.x, 0.05, coords.z);
@@ -874,6 +932,11 @@ export default function ThreeDMap({
     const handleCanvasClick = (e: MouseEvent) => {
       if (gameEndedRef.current) return;
 
+      // Only process click if the click originated on the canvas or container
+      if (e.target !== canvasRef.current && !canvasRef.current?.contains(e.target as Node)) {
+        return;
+      }
+
       const coords = getMouseCoords(e);
       mouse.x = coords.x;
       mouse.y = coords.y;
@@ -901,7 +964,7 @@ export default function ThreeDMap({
     };
 
     window.addEventListener("mousemove", handleMouseMove);
-    renderer.domElement.addEventListener("click", handleCanvasClick);
+    window.addEventListener("click", handleCanvasClick);
 
     // --- 14. Responsive Resize ---
     const handleResize = () => {
@@ -919,9 +982,7 @@ export default function ThreeDMap({
     return () => {
       cancelAnimationFrame(animationFrameId);
       window.removeEventListener("mousemove", handleMouseMove);
-      if (canvasRef.current) {
-        canvasRef.current.removeEventListener("click", handleCanvasClick);
-      }
+      window.removeEventListener("click", handleCanvasClick);
       resizeObserver.disconnect();
 
       // Dispose resources
