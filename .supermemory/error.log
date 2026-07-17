@@ -12,3 +12,5 @@ silently degrade if we mixed them. To switch models:
 
 Example wipe (DESTROYS all local memories):
   rm -rf "$SUPERMEMORY_DATA_DIR"   # default is ./.supermemory
+[2026-07-17T01:03:23.226Z] fatal during startup: Unable to connect. Is the computer able to access the url?
+[2026-07-17T01:05:58.404Z] fatal during startup: Unable to connect. Is the computer able to access the url?

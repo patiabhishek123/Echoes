@@ -71,7 +71,7 @@ export default function ThreeDMap({
     renderer.setSize(width, height);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
-    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.shadowMap.type = THREE.PCFShadowMap;
 
     // --- 4. Lights ---
     // Ambient Light
@@ -705,14 +705,18 @@ export default function ThreeDMap({
 
     // --- 12. Animation Loop ---
     let animationFrameId: number;
-    const clock = new THREE.Clock();
+    let lastTime = performance.now();
+    let elapsedTime = 0;
     let wasGossiping = false;
 
     const animate = () => {
       animationFrameId = requestAnimationFrame(animate);
 
-      const time = clock.getElapsedTime();
-      const deltaTime = Math.min(clock.getDelta(), 0.1);
+      const now = performance.now();
+      const deltaTime = Math.min((now - lastTime) / 1000, 0.1);
+      lastTime = now;
+      elapsedTime += deltaTime;
+      const time = elapsedTime;
 
       // Flickering campfire PointLight intensity
       fireLight.intensity = 2.5 + Math.sin(time * 15) * 0.4 + Math.cos(time * 28) * 0.2;

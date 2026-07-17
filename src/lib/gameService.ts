@@ -590,7 +590,7 @@ RESPONSE SCHEMA (Return ONLY this JSON, no markdown blocks, no extra text):
 `;
 
   try {
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
     const result = await model.generateContent(systemPrompt);
     const responseText = result.response.text().trim();
     
@@ -736,7 +736,7 @@ Return your answer as a JSON object matching this schema (Return ONLY JSON, no m
 `;
 
     try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-3.5-flash" });
       const result = await model.generateContent(prompt);
       const responseText = result.response.text().trim();
       
