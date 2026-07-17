@@ -4,7 +4,8 @@ import {
   searchNPCMemories, 
   deleteSupermemoryDocument, 
   getGameState, 
-  saveGameState 
+  saveGameState,
+  checkGameEndings
 } from "@/lib/gameService";
 
 export async function GET(request: Request) {
@@ -87,7 +88,6 @@ export async function DELETE(request: Request) {
     }
 
     // Check endings and save state
-    const { checkGameEndings } = require("@/lib/gameService");
     checkGameEndings(state);
     saveGameState(state);
 

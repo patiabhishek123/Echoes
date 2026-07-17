@@ -137,8 +137,9 @@ const SEED_MEMORIES: Record<string, string[]> = {
 
 export function getGameState(): GameState {
   if (!fs.existsSync(STATE_FILE_PATH)) {
+    const sessionId = Math.random().toString(36).substring(2, 10);
     const newState: GameState = {
-      sessionId: Math.random().toString(36).substring(2, 10),
+      sessionId,
       day: 1,
       coins: 30,
       gameEnded: false,
@@ -154,6 +155,23 @@ export function getGameState(): GameState {
       corruption: 15
     };
     saveGameState(newState);
+    resetMockMemories(newState.sessionId);
+
+    // Seed the fresh Supermemory tags in the background
+    for (const [npcId, memories] of Object.entries(SEED_MEMORIES)) {
+      const containerTag = `${npcId}_${sessionId}`;
+      for (const memory of memories) {
+        addMemoryToSupermemory(containerTag, memory).catch(err => 
+          console.error(`Error seeding memory for ${npcId}:`, err)
+        );
+      }
+    }
+
+    // Clear player journal under player_${sessionId} tag
+    addMemoryToSupermemory(`player_${sessionId}`, "Entered the village of Echoes on Day 1. Looking to blend in and learn secrets.").catch(err => 
+      console.error("Error seeding player journal:", err)
+    );
+
     return newState;
   }
 
@@ -424,6 +442,9 @@ async function getNPCMemories(containerTag: string, query: string): Promise<stri
     const searchResults = data?.searchResults?.results?.map((r: any) => r.memory) || [];
 
     const all = Array.from(new Set([...staticMemories, ...dynamicMemories, ...searchResults]));
+    if (all.length === 0) {
+      return getMockMemoriesForTag(containerTag, query);
+    }
     return all as string[];
   } catch (error) {
     return getMockMemoriesForTag(containerTag, query);
@@ -461,6 +482,10 @@ export async function getNPCMemoriesWithIds(containerTag: string, query: string 
       if (docId) {
         items.push({ id: docId, content });
       }
+    }
+
+    if (items.length === 0) {
+      return getMockMemoriesWithIdsForTag(containerTag, query);
     }
 
     return items;
@@ -788,7 +813,7 @@ Return your answer as a JSON object matching this schema (Return ONLY JSON, no m
   return newGossipLogs;
 }
 
-function checkGameEndings(state: GameState) {
+export function checkGameEndings(state: GameState) {
   if (state.gameEnded) return;
 
   // Ending 0: System Lockdown (Global Corruption reaches 100%)
